@@ -1,0 +1,6 @@
+".\Objects\STARTUP.obj",
+".\Objects\dht11.obj",
+".\Objects\lcd1602.obj",
+".\Objects\main.obj" 
+TO ".\Objects\at89c51" 
+PRINT(".\Listings\at89c51.m51")
