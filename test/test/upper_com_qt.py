@@ -34,9 +34,17 @@ class SerialThread(QThread):
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("温湿度监控上位机")
+        self.setWindowTitle("温湿度/频率监控上位机")
         self.ser = None
         self.serial_thread = None
+        self.current_channel = 1 # 0=温湿度, 1=频率
+
+        # 通道选择
+        self.channel_label = QLabel("采集通道:")
+        self.channel_combo = QComboBox()
+        self.channel_combo.addItems(["温湿度", "频率"])
+        self.channel_combo.setCurrentIndex(1)
+        self.channel_combo.currentIndexChanged.connect(self.change_channel)
 
         # 串口选择
         self.port_label = QLabel("串口号:")
@@ -63,10 +71,15 @@ class MainWindow(QWidget):
         # 数据显示
         self.temp_label = QLabel("温度: -- ℃")
         self.humi_label = QLabel("湿度: -- %")
+        self.freq_label = QLabel("频率: -- Hz")
         self.text_area = QTextEdit()
         self.text_area.setReadOnly(True)
 
         # 布局
+        h0 = QHBoxLayout()
+        h0.addWidget(self.channel_label)
+        h0.addWidget(self.channel_combo)
+
         h1 = QHBoxLayout()
         h1.addWidget(self.port_label)
         h1.addWidget(self.port_combo)
@@ -79,13 +92,16 @@ class MainWindow(QWidget):
         h2.addWidget(self.stop_btn)
 
         v = QVBoxLayout()
+        v.addLayout(h0)
         v.addLayout(h1)
         v.addLayout(h2)
         v.addWidget(self.temp_label)
         v.addWidget(self.humi_label)
+        v.addWidget(self.freq_label)
         v.addWidget(self.text_area)
 
         self.setLayout(v)
+        self.update_channel_ui()
 
     def refresh_ports(self):
         self.port_combo.clear()
@@ -107,6 +123,8 @@ class MainWindow(QWidget):
             self.close_btn.setEnabled(True)
             self.start_btn.setEnabled(True)
             self.text_area.append("串口已打开")
+            # 打开串口后立即同步通道
+            self.send_channel_cmd()
         except Exception as e:
             QMessageBox.critical(self, "错误", f"打开串口失败: {e}")
 
@@ -135,16 +153,47 @@ class MainWindow(QWidget):
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
 
+    def change_channel(self, idx):
+        self.current_channel = idx
+        self.update_channel_ui()
+        self.send_channel_cmd()
+
+    def send_channel_cmd(self):
+        if self.ser and self.ser.is_open:
+            if self.current_channel == 0:
+                self.ser.write(b'A')  # 温湿度
+                self.text_area.append("切换到温湿度通道")
+            else:
+                self.ser.write(b'B')  # 频率
+                self.text_area.append("切换到频率通道")
+
+    def update_channel_ui(self):
+        if self.current_channel == 0:
+            self.temp_label.setVisible(True)
+            self.humi_label.setVisible(True)
+            self.freq_label.setVisible(False)
+        else:
+            self.temp_label.setVisible(False)
+            self.humi_label.setVisible(False)
+            self.freq_label.setVisible(True)
+
     def on_data_received(self, line):
         self.text_area.append(line)
         print(f"原始数据: {line}")
-        # 解析温湿度
-        match = re.search(r"T:(\d+)\s+H:(\d+)", line)
-        if match:
-            t = match.group(1)
-            h = match.group(2)
-            self.temp_label.setText(f"温度: {t} ℃")
-            self.humi_label.setText(f"湿度: {h} %")
+        if self.current_channel == 0:
+            # 解析温湿度
+            match = re.search(r"T:(\d+)\s+H:(\d+)", line)
+            if match:
+                t = match.group(1)
+                h = match.group(2)
+                self.temp_label.setText(f"温度: {t} ℃")
+                self.humi_label.setText(f"湿度: {h} %")
+        else:
+            # 解析频率
+            match = re.search(r"FREQ:(\d+)", line)
+            if match:
+                f = match.group(1)
+                self.freq_label.setText(f"频率: {f} Hz")
 
     def closeEvent(self, event):
         self.close_serial()

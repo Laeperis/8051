@@ -46,7 +46,7 @@ void LCD_ShowString(unsigned char row, unsigned char col, char *str) {
     }
 }
 
-void LCD_ShowNum(unsigned char row, unsigned char col, unsigned char num, unsigned char len) {
+void LCD_ShowNum(unsigned char row, unsigned char col, unsigned int num, unsigned char len) {
     unsigned char i;
     for(i=0;i<len;i++) {
         LCD_WriteCmd((row==0?0x80:0xC0)+col+len-1-i);
