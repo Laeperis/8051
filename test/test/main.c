@@ -135,8 +135,8 @@ void main() {
                         last_p32_state = FREQ_IN;
                     }
                     freq_value = pulse_count * 10; // 100ms的计数值*10=1s的频率
-                    LCD_ShowString(0,0,"FREQ:      Hz");
-                    LCD_ShowNum(0,5,freq_value,5);
+                    LCD_ShowString(0,0,"FREQ:       Hz");
+                    LCD_ShowNum(0,6,freq_value,5);
                     sprintf(buf, "FREQ:%u\r\n", freq_value);
                     UART_SendStr(buf);
                 }
@@ -145,7 +145,6 @@ void main() {
                 EA = 0; // 关闭总中断
                 if(DHT11_Read(&temp, &humi) == 0) {
                     EA = 1; // 恢复总中断
-                    UART_SendStr("[DEBUG] DHT11 OK\r\n");
                     LCD_ShowString(0,0,"Temp:    C");
                     LCD_ShowString(1,0,"Humi:    %");
                     LCD_ShowNum(0,6,temp,2);

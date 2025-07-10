@@ -59,6 +59,7 @@ class MainWindow(QWidget):
         self.close_btn = QPushButton("关闭串口")
         self.close_btn.clicked.connect(self.close_serial)
         self.close_btn.setEnabled(False)
+        self.channel_combo.setEnabled(True) # 解锁通道选择
 
         # 启动/停止采集
         self.start_btn = QPushButton("启动采集")
@@ -137,6 +138,7 @@ class MainWindow(QWidget):
         self.close_btn.setEnabled(False)
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
+        self.channel_combo.setEnabled(True) # 解锁通道选择
         self.text_area.append("串口已关闭")
 
     def start_collect(self):
@@ -145,6 +147,7 @@ class MainWindow(QWidget):
             self.text_area.append("已发送启动命令")
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
+            self.channel_combo.setEnabled(False) # 锁定通道选择
 
     def stop_collect(self):
         if self.ser and self.ser.is_open:
@@ -152,6 +155,7 @@ class MainWindow(QWidget):
             self.text_area.append("已发送停止命令")
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
+            self.channel_combo.setEnabled(True) # 解锁通道选择
 
     def change_channel(self, idx):
         self.current_channel = idx
