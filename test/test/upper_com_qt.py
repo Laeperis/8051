@@ -73,6 +73,9 @@ class MainWindow(QWidget):
         self.temp_label = QLabel("温度: -- ℃")
         self.humi_label = QLabel("湿度: -- %")
         self.freq_label = QLabel("频率: -- Hz")
+        self.half_temp_label = QLabel("减半温度: -- ℃")
+        self.half_humi_label = QLabel("减半湿度: -- %")
+        self.half_freq_label = QLabel("减半频率: -- Hz")
         self.text_area = QTextEdit()
         self.text_area.setReadOnly(True)
 
@@ -99,6 +102,9 @@ class MainWindow(QWidget):
         v.addWidget(self.temp_label)
         v.addWidget(self.humi_label)
         v.addWidget(self.freq_label)
+        v.addWidget(self.half_temp_label)
+        v.addWidget(self.half_humi_label)
+        v.addWidget(self.half_freq_label)
         v.addWidget(self.text_area)
 
         self.setLayout(v)
@@ -176,10 +182,16 @@ class MainWindow(QWidget):
             self.temp_label.setVisible(True)
             self.humi_label.setVisible(True)
             self.freq_label.setVisible(False)
+            self.half_temp_label.setVisible(True)
+            self.half_humi_label.setVisible(True)
+            self.half_freq_label.setVisible(False)
         else:
             self.temp_label.setVisible(False)
             self.humi_label.setVisible(False)
             self.freq_label.setVisible(True)
+            self.half_temp_label.setVisible(False)
+            self.half_humi_label.setVisible(False)
+            self.half_freq_label.setVisible(True)
 
     def on_data_received(self, line):
         self.text_area.append(line)
@@ -188,16 +200,28 @@ class MainWindow(QWidget):
             # 解析温湿度
             match = re.search(r"T:(\d+)\s+H:(\d+)", line)
             if match:
-                t = match.group(1)
-                h = match.group(2)
+                t = int(match.group(1))
+                h = int(match.group(2))
                 self.temp_label.setText(f"温度: {t} ℃")
                 self.humi_label.setText(f"湿度: {h} %")
+                half_t = t // 2
+                half_h = h // 2
+                self.half_temp_label.setText(f"减半温度: {half_t} ℃")
+                self.half_humi_label.setText(f"减半湿度: {half_h} %")
+                # 回发减半后的数字，格式："{half_t} {half_h}\r\n"
+                if self.ser and self.ser.is_open:
+                    self.ser.write(f"{half_t} {half_h}\r\n".encode())
         else:
             # 解析频率
             match = re.search(r"FREQ:(\d+)", line)
             if match:
-                f = match.group(1)
+                f = int(match.group(1))
                 self.freq_label.setText(f"频率: {f} Hz")
+                half_f = f // 2
+                self.half_freq_label.setText(f"减半频率: {half_f} Hz")
+                # 回发减半后的数字，格式："{half_f}\r\n"
+                if self.ser and self.ser.is_open:
+                    self.ser.write(f"{half_f}\r\n".encode())
 
     def closeEvent(self, event):
         self.close_serial()

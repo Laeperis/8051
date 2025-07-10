@@ -1,0 +1,44 @@
+C51 COMPILER V9.60.7.0   DAC0832                                                           07/10/2025 15:03:18 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE DAC0832
+OBJECT MODULE PLACED IN .\Objects\dac0832.obj
+COMPILER INVOKED BY: E:\Keil_V5\C51\BIN\C51.EXE test\test\dac0832.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\
+                    -Listings\dac0832.lst) TABS(2) OBJECT(.\Objects\dac0832.obj)
+
+line level    source
+
+   1          #include <reg51.h>
+   2          #include "dac0832.h"
+   3          
+   4          // 假设DAC的控制引脚连接到P2
+   5          sbit DAC_CS = P2^5;
+   6          sbit DAC_WR = P2^6;
+   7          
+   8          void DAC_Init() {
+   9   1          // 初始化时确保DAC不被选中
+  10   1          DAC_CS = 1;
+  11   1          DAC_WR = 1;
+  12   1      }
+  13          
+  14          void DAC_Output(unsigned char value) {
+  15   1          DAC_CS = 0; // 选中DAC
+  16   1          P1 = value; // 将数据送到P1口
+  17   1          DAC_WR = 0; // 产生一个下降沿，锁存数据
+  18   1          DAC_WR = 1; // 恢复
+  19   1          DAC_CS = 1; // 取消选中
+  20   1      } 
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     16    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
