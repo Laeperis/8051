@@ -1,11 +1,11 @@
 <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
 <WORKSPACE>
  <FRAME activewindow="0">
-  <PLACEMENT>2c00000000000000010000000083ffff0083ffffffffffffffffffff890000008b000000ab06000068040000</PLACEMENT>
+  <PLACEMENT>2c00000000000000010000000083ffff0083ffffffffffffffffffff24000000fb00000046060000d8040000</PLACEMENT>
   <WINDOW type="default" module="ISIS">
-   <editor metric="0" gridmajor="25400000" mode="00000000" zoom="-1" scale="72" flipped="0" gridminor="508000" gridmode="32" snapidx="1" snap="127000" xcursor="0" orgmode="0" snaprange="176388">
+   <editor metric="0" gridmajor="25400000" mode="00000000" zoom="0" scale="72" flipped="0" gridminor="508000" gridmode="32" snapidx="1" snap="127000" xcursor="0" orgmode="0" snaprange="176388">
     <world y1="-8890000" x1="-12700000" y2="8890000" x2="12700000"/>
-    <centre x="3810000" y="-2043759"/>
+    <centre x="381000" y="-3036240"/>
     <origin x="0" y="0"/>
    </editor>
   </WINDOW>
@@ -18,9 +18,9 @@
   </editor>
  </MODULE>
  <MODULE name="ISIS">
-  <editor metric="0" gridmajor="25400000" mode="00000000" zoom="-1" scale="72" flipped="0" gridminor="508000" gridmode="32" snapidx="1" snap="127000" xcursor="0" orgmode="0" snaprange="176388">
+  <editor metric="0" gridmajor="25400000" mode="00000000" zoom="0" scale="72" flipped="0" gridminor="508000" gridmode="32" snapidx="1" snap="127000" xcursor="0" orgmode="0" snaprange="176388">
    <world y1="-8890000" x1="-12700000" y2="8890000" x2="12700000"/>
-   <centre x="3810000" y="-2043759"/>
+   <centre x="381000" y="-3036240"/>
    <origin x="0" y="0"/>
   </editor>
  </MODULE>
@@ -54,7 +54,7 @@
      <ITEM name="nItems">0</ITEM>
     </PROPERTIES>
    </POPUP>
-   <POPUP w="450" x="71" flags="00008023" y="764" h="250" pid="0" iid="12">
+   <POPUP w="450" x="64" flags="00000023" y="783" h="250" pid="0" iid="12">
     <PROPERTIES>
      <ITEM name="AutoEcho">0</ITEM>
      <ITEM name="HexMode">0</ITEM>
@@ -83,14 +83,33 @@
      <ITEM name="TopLineAddress">00000080</ITEM>
     </PROPERTIES>
    </POPUP>
-   <POPUP w="450" x="28" flags="00000023" y="511" h="250" pid="0" iid="17">
+   <POPUP w="450" x="71" flags="00000023" y="514" h="250" pid="0" iid="17">
     <PROPERTIES>
      <ITEM name="AutoEcho">0</ITEM>
      <ITEM name="HexMode">0</ITEM>
     </PROPERTIES>
    </POPUP>
-   <POPUP w="1384" x="1067" flags="00000000" y="149" h="877" pid="0" iid="15">
+   <POPUP w="574" x="1067" flags="00000000" y="149" h="349" pid="0" iid="15">
     <PROPERTIES/>
+   </POPUP>
+   <POPUP w="1384" x="1176" flags="00008001" y="515" h="877" pid="0" iid="22">
+    <PROPERTIES/>
+   </POPUP>
+   <POPUP w="648" x="193" flags="00000023" y="289" h="250" pid="0" iid="23">
+    <PROPERTIES>
+     <ITEM name="ComboBox1000">S</ITEM>
+     <ITEM name="ComboBox1001">Sr</ITEM>
+     <ITEM name="ComboBox1002">P</ITEM>
+     <ITEM name="ComboBox1003">A</ITEM>
+     <ITEM name="ComboBox1004">N</ITEM>
+     <ITEM name="ComboBox1005">S</ITEM>
+     <ITEM name="ComboBox1006">Sr</ITEM>
+     <ITEM name="ComboBox1007">P</ITEM>
+     <ITEM name="ComboBox1008">A</ITEM>
+     <ITEM name="ComboBox1009">N</ITEM>
+     <ITEM name="HSplitter1Pos">100</ITEM>
+     <ITEM name="VSplitter1Pos">238</ITEM>
+    </PROPERTIES>
    </POPUP>
   </PWI>
  </MODULE>

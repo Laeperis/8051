@@ -7,6 +7,10 @@ from PyQt5.QtWidgets import (
     QComboBox, QTextEdit, QMessageBox
 )
 from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QPalette, QBrush, QPixmap, QPainter, QColor, QImage
+from PyQt5.QtWidgets import QGraphicsDropShadowEffect
+import PyQt5.QtCore as QtCore
+from PyQt5.QtCore import Qt
 
 class SerialThread(QThread):
     data_received = pyqtSignal(str)
@@ -38,6 +42,9 @@ class MainWindow(QWidget):
         self.ser = None
         self.serial_thread = None
         self.current_channel = 1 # 0=温湿度, 1=频率
+
+        # 固定窗口初始大小和比例
+        self.setFixedSize(960, 540)
 
         # 通道选择
         self.channel_label = QLabel("采集通道:")
@@ -79,20 +86,73 @@ class MainWindow(QWidget):
         self.text_area = QTextEdit()
         self.text_area.setReadOnly(True)
 
-        # 布局
+        # 优化按钮大小和样式（白底半透明，禁用更灰）
+        button_width = 120
+        button_height = 36
+        button_style = """
+        QPushButton {
+            background: rgba(255,255,255,180);
+            color: #222;
+            border-radius: 6px;
+            border: 1px solid #bbb;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 6px 16px;
+            font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
+        }
+        QPushButton:hover {
+            background: rgba(255,255,255,220);
+            border: 1.5px solid #4A90E2;
+        }
+        QPushButton:pressed {
+            background: rgba(230,230,230,200);
+        }
+        QPushButton:disabled {
+            background: rgba(220,220,220,180);
+            color: #aaa;
+            border: 1px solid #ccc;
+        }
+        """
+        combo_style = """
+        QComboBox {
+            background: rgba(255,255,255,180);
+            color: #222;
+            border-radius: 6px;
+            border: 1px solid #bbb;
+            font-size: 15px;
+            font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
+            padding: 4px 12px;
+        }
+        QComboBox:disabled {
+            background: rgba(220,220,220,180);
+            color: #aaa;
+            border: 1px solid #ccc;
+        }
+        """
+        for btn in [self.open_btn, self.close_btn, self.refresh_btn, self.start_btn, self.stop_btn]:
+            btn.setMinimumWidth(button_width)
+            btn.setMinimumHeight(button_height)
+            btn.setStyleSheet(button_style)
+        self.channel_combo.setStyleSheet(combo_style)
+        self.port_combo.setStyleSheet(combo_style)
+
+        # 分散对齐布局
         h0 = QHBoxLayout()
         h0.addWidget(self.channel_label)
         h0.addWidget(self.channel_combo)
+        h0.addStretch(1)
 
         h1 = QHBoxLayout()
         h1.addWidget(self.port_label)
         h1.addWidget(self.port_combo)
+        h1.addStretch(1)
         h1.addWidget(self.refresh_btn)
         h1.addWidget(self.open_btn)
         h1.addWidget(self.close_btn)
 
         h2 = QHBoxLayout()
         h2.addWidget(self.start_btn)
+        h2.addStretch(1)
         h2.addWidget(self.stop_btn)
 
         v = QVBoxLayout()
@@ -106,9 +166,59 @@ class MainWindow(QWidget):
         v.addWidget(self.half_humi_label)
         v.addWidget(self.half_freq_label)
         v.addWidget(self.text_area)
-
         self.setLayout(v)
         self.update_channel_ui()
+
+        # 设置text_area为半透明
+        self.text_area.setStyleSheet("background: rgba(0,0,0,128); color: white;")
+
+        # 设置所有label为白色加黑色描边，字体更大，微软雅黑
+        def set_label_shadow(label):
+            effect = QGraphicsDropShadowEffect()
+            effect.setBlurRadius(0)
+            effect.setColor(QColor(0,0,0))
+            effect.setOffset(1, 1)
+            label.setGraphicsEffect(effect)
+            label.setStyleSheet("color: white; font-weight: bold; font-size: 20px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;")
+        for label in [self.channel_label, self.port_label, self.temp_label, self.humi_label, self.freq_label, self.half_temp_label, self.half_humi_label, self.half_freq_label]:
+            set_label_shadow(label)
+
+        # 设置背景图片（自适应窗口大小+淡灰色蒙版）
+        import os
+        self.bg_path = os.path.join(os.path.dirname(__file__), "bg.jpg")
+        self.bg_pixmap = QPixmap(self.bg_path) if os.path.exists(self.bg_path) else None
+        self.setAutoFillBackground(True)
+        self.update_background()
+
+    def update_background(self):
+        if self.bg_pixmap:
+            palette = QPalette()
+            # 兼容不同PyQt5版本，动态获取枚举值
+            aspect = getattr(Qt, 'KeepAspectRatioByExpanding', 1)
+            trans = getattr(Qt, 'SmoothTransformation', 2)
+            img = self.bg_pixmap.toImage().scaled(
+                self.size(),
+                aspect,
+                trans   # type: ignore
+            )  # type: ignore
+            # 创建淡灰色蒙版
+            overlay = QImage(img.size(), QImage.Format_ARGB32)
+            overlay.fill(QColor(200, 200, 200, 80))  # 80为透明度
+            painter = QPainter(img)
+            painter.drawImage(0, 0, overlay)
+            painter.end()
+            scaled = QPixmap.fromImage(img)
+            palette.setBrush(QPalette.Window, QBrush(scaled))
+            self.setPalette(palette)
+
+    def resizeEvent(self, event):
+        # 固定宽高比为1920:1080
+        w = self.width()
+        h = int(w * 1080 / 1920)
+        if h != self.height():
+            self.setFixedSize(w, h)
+        self.update_background()
+        super().resizeEvent(event)
 
     def refresh_ports(self):
         self.port_combo.clear()
@@ -154,6 +264,7 @@ class MainWindow(QWidget):
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
             self.channel_combo.setEnabled(False) # 锁定通道选择
+            self.close_btn.setEnabled(False) # 采集时不能关闭串口
 
     def stop_collect(self):
         if self.ser and self.ser.is_open:
@@ -162,6 +273,7 @@ class MainWindow(QWidget):
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
             self.channel_combo.setEnabled(True) # 解锁通道选择
+            self.close_btn.setEnabled(True) # 停止采集后可关闭串口
 
     def change_channel(self, idx):
         self.current_channel = idx
