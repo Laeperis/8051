@@ -13,8 +13,11 @@ char debug[17]; // 全局变量
 volatile unsigned char current_channel = 0; // 0=DHT11, 1=555频率
 volatile bit freq_sample_flag = 0;
 volatile unsigned char t0_count = 0;
-volatile unsigned int freq_count = 0; // 中断计数值
-unsigned int freq_value = 0;        // 主循环读取值
+
+// -- 频率测量所需的状态变量 --
+volatile unsigned int freq_count = 0; // 用于累加脉冲数量
+unsigned int freq_value = 0;        // 用于存放最终计算出的频率值
+static bit last_p32_state = 1;      // 用于检测P3.2引脚的下降沿
 
 void UART_Init() {
     SCON = 0x50;      // 8位数据,可变波特率
@@ -45,7 +48,6 @@ void Timer1_Init() {
 
 void INT0_Init() {
     IT0 = 1; // 下降沿触发
-    // EX0 = 1; // 不再默认使能INT0
 }
 
 void UART_SendStr(char *str) {
@@ -67,22 +69,18 @@ void UART_ISR() interrupt 4 {
         if(last_rx == 'E') collect_flag = 0;
         if(last_rx == 'A') {
             current_channel = 0;
+            freq_count = 0;       // 切换通道时，清零脉冲计数
+            freq_sample_flag = 0; // 清除可能残留的采样标志
             LCD_ShowString(0,0,"                "); // 清空第一行
             LCD_ShowString(1,0,"                "); // 清空第二行
         }
         if(last_rx == 'B') {
             current_channel = 1;
+            freq_count = 0;       // 切换通道时，清零脉冲计数
+            t0_count = 0;         // 同时复位1秒定时器的中间计数
+            freq_sample_flag = 0; // 清除可能残留的采样标志
             LCD_ShowString(0,0,"                "); // 清空第一行
             LCD_ShowString(1,0,"                "); // 清空第二行
-        }
-
-        // 2. Set hardware state based on current system state
-        if(collect_flag && current_channel == 1) {
-            // Only enable interrupt if collecting AND in frequency mode
-            EX0 = 1;
-        } else {
-            // In all other cases (stopped OR in temp mode), disable it.
-            EX0 = 0;
         }
     }
 }
@@ -91,24 +89,23 @@ void Timer0_ISR() interrupt 1 {
     TH0 = (65536 - 50000) / 256;
     TL0 = (65536 - 50000) % 256;
     t0_count++;
-    if (t0_count >= 2) { // 2*50ms=100ms
+    if (t0_count >= 20) { // 20 * 50ms = 1000ms = 1s
         t0_count = 0;
-        freq_sample_flag = 1; // 产生100ms采样标志
+        freq_sample_flag = 1; // 产生1s采样标志
     }
+}
+
+void INT0_ISR() interrupt 0 {
+    freq_count++;
 }
 
 extern void Delay1000ms();
 sbit FREQ_IN = P3^2;
 
 void main() {
-    static unsigned char last_mode = 0xFF; // 不可能的初值，保证首次切换
+    // 简化局部变量，只保留必要的
     unsigned char temp, humi;
     char buf[20];
-    unsigned int count;
-    unsigned int freq_value = 0;
-    unsigned int pulse_count;
-    unsigned long i;
-    bit last_p32_state;
 
     UART_SendStr("[DEBUG] UART_Init\r\n");
     UART_Init();
@@ -116,52 +113,63 @@ void main() {
     LCD_Init();
     UART_SendStr("[DEBUG] Timer0_Init\r\n");
     Timer0_Init();
+    UART_SendStr("[DEBUG] INT0_Init\r\n");
+    INT0_Init();
     EA = 1; // 总中断使能
-    EX0 = 0; // 默认关闭外部中断0
     UART_SendStr("[DEBUG] Init Done\r\n");
     LCD_ShowString(0,0,"WAIT CMD      ");
     while(1) {
+        // --- 硬件状态控制器 ---
+        // 根据软件状态，实时决定是否开启外部中断进行频率计数
+        if (collect_flag && current_channel == 1) {
+            EX0 = 1; // 启动采集且在频率通道时，使能外部中断
+        } else {
+            EX0 = 0; // 其他所有情况（停止或在温湿度通道），都关闭外部中断
+        }
+
         if(collect_flag) {
-            if(current_channel == 1) { // 555频率测量 (手动轮询)
+            if(current_channel == 1) { // 555频率测量 (硬件中断计数法)
+                // 轮询代码已删除，计数在后台由INT0_ISR自动完成
                 if(freq_sample_flag) {
-                    freq_sample_flag = 0;
-                    pulse_count = 0;
-                    last_p32_state = FREQ_IN;
-                    // 在100ms内进行轮询检测
-                    for(i=0; i<30000; i++) { // 这是一个粗略的延时
-                        if(last_p32_state == 1 && FREQ_IN == 0) {
-                            pulse_count++;
-                        }
-                        last_p32_state = FREQ_IN;
-                    }
-                    freq_value = pulse_count * 10; // 100ms的计数值*10=1s的频率
+                    freq_sample_flag = 0; // 清除标志，为下个周期做准备
+
+                    EA = 0; // 关总中断，保证原子操作
+                    freq_value = freq_count; // 1s内的计数值就是频率
+                    freq_count = 0;          // 将脉冲计数器清零，开始新的计数周期
+                    EA = 1; // 开总中断
+
                     LCD_ShowString(0,0,"FREQ:       Hz");
                     LCD_ShowNum(0,6,freq_value,5);
                     sprintf(buf, "FREQ:%u\r\n", freq_value);
                     UART_SendStr(buf);
                 }
             } else if(current_channel == 0) { // DHT11温湿度
-                Delay1000ms(); // 每次读取之间必须有延时
-                EA = 0; // 关闭总中断
-                if(DHT11_Read(&temp, &humi) == 0) {
-                    EA = 1; // 恢复总中断
-                    LCD_ShowString(0,0,"Temp:    C");
-                    LCD_ShowString(1,0,"Humi:    %");
-                    LCD_ShowNum(0,6,temp,2);
-                    LCD_ShowNum(1,6,humi,2);
-                    sprintf(buf, "T:%u H:%u\r\n", (unsigned int)temp, (unsigned int)humi);
-                    UART_SendStr(buf);
-                } else {
-                    EA = 1; // 恢复总中断
-                    UART_SendStr("[DEBUG] DHT11 FAIL\r\n");
-                    LCD_ShowString(0,0,"Temp:    C");
-                    LCD_ShowString(1,0,"Humi:    %");
-                    LCD_ShowNum(0,6,99,2);
-                    LCD_ShowNum(1,6,99,2);
-                    UART_SendStr("DHT11 FAIL\r\n");
+                // freq_count = 0; // 确保在DHT11模式下，频率计数器是清零的
+                if (freq_sample_flag) { // 复用1秒的定时器门控
+                    freq_sample_flag = 0;
+                    
+                    EA = 0; // 关闭总中断
+                    if(DHT11_Read(&temp, &humi) == 0) {
+                        EA = 1; // 恢复总中断
+                        LCD_ShowString(0,0,"Temp:    C");
+                        LCD_ShowString(1,0,"Humi:    %");
+                        LCD_ShowNum(0,6,temp,2);
+                        LCD_ShowNum(1,6,humi,2);
+                        sprintf(buf, "T:%u H:%u\r\n", (unsigned int)temp, (unsigned int)humi);
+                        UART_SendStr(buf);
+                    } else {
+                        EA = 1; // 恢复总中断
+                        UART_SendStr("[DEBUG] DHT11 FAIL\r\n");
+                        LCD_ShowString(0,0,"Temp:    C");
+                        LCD_ShowString(1,0,"Humi:    %");
+                        LCD_ShowNum(0,6,99,2);
+                        LCD_ShowNum(1,6,99,2);
+                        UART_SendStr("DHT11 FAIL\r\n");
+                    }
                 }
             }
         } else {
+            freq_count = 0; // 停止采集时，也清零频率计数器
             LCD_ShowString(0,0,"WAIT CMD      ");
             LCD_ShowString(1,0,"              ");
             Delay1000ms();
