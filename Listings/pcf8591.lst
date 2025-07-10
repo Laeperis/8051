@@ -1,4 +1,4 @@
-C51 COMPILER V9.60.7.0   PCF8591                                                           07/10/2025 18:14:35 PAGE 1   
+C51 COMPILER V9.60.7.0   PCF8591                                                           07/10/2025 19:23:42 PAGE 1   
 
 
 C51 COMPILER V9.60.7.0, COMPILATION OF MODULE PCF8591
@@ -8,62 +8,42 @@ COMPILER INVOKED BY: E:\Keil_V5\C51\BIN\C51.EXE test\test\pcf8591.c OPTIMIZE(8,S
 
 line level    source
 
-   1          #include <reg51.h>
-   2          #include "pcf8591.h"
-   3          
-   4          sbit I2C_SCL = P1^0;
-   5          sbit I2C_SDA = P1^1;
-   6          
-   7          #define PCF8591_ADDR 0x90 // A0A1A2=0, 写地址
-   8          
-   9          void I2C_Delay() {
-  10   1          unsigned char i = 10;
-  11   1          while(i--);
-  12   1      }
-  13          
-  14          void I2C_Start() {
-  15   1          I2C_SDA = 1; I2C_SCL = 1; I2C_Delay();
-  16   1          I2C_SDA = 0; I2C_Delay();
-  17   1          I2C_SCL = 0;
-  18   1      }
-  19          
-  20          void I2C_Stop() {
-  21   1          I2C_SDA = 0; I2C_SCL = 1; I2C_Delay();
-  22   1          I2C_SDA = 1; I2C_Delay();
-  23   1      }
-  24          
-  25          void I2C_SendByte(unsigned char dat) {
-  26   1          unsigned char i;
-  27   1          for(i=0;i<8;i++) {
-  28   2              I2C_SDA = (dat & 0x80) ? 1 : 0;
-  29   2              I2C_SCL = 1; I2C_Delay();
-  30   2              I2C_SCL = 0; I2C_Delay();
-  31   2              dat <<= 1;
-  32   2          }
-  33   1          I2C_SDA = 1; // 释放总线
-  34   1          I2C_SCL = 1; I2C_Delay(); // 忽略ACK
-  35   1          I2C_SCL = 0;
-  36   1      }
-  37          
-  38          void PCF8591_WriteDAC(unsigned char value) {
-  39   1          I2C_Start();
-  40   1          I2C_SendByte(PCF8591_ADDR); // 发送地址+写
-  41   1          I2C_SendByte(0x40);         // 控制字节：DAC使能
-  42   1          I2C_SendByte(value);        // 发送数据
-  43   1          I2C_Stop();
-  44   1      } 
+   1          #include "pcf8591.h"
+   2          u8 PCF8591_GetADC_CHx(u8 ch) {
+   3   1          u8 dat;
+   4   1          IIC_SendStart();
+   5   1          IIC_SendOneByte(PCF8591_WRITE_ADDR);
+   6   1          IIC_GetAck();
+   7   1          IIC_SendOneByte(ch);
+   8   1          IIC_GetAck();
+   9   1          IIC_SendStart();
+  10   1          IIC_SendOneByte(PCF8591_READ_ADDR);
+  11   1          IIC_GetAck();
+  12   1          dat=IIC_RecvOneByte();
+  13   1          IIC_SendAck(1);
+  14   1          IIC_SendStop();
+  15   1          return dat;
+  16   1      }
+  17          void PCF8591_SetDAC_Data(u8 val) {
+  18   1          IIC_SendStart();
+  19   1          IIC_SendOneByte(PCF8591_WRITE_ADDR);
+  20   1          IIC_GetAck();
+  21   1          IIC_SendOneByte(0x40);
+  22   1          IIC_GetAck();
+  23   1          IIC_SendOneByte(val);
+  24   1          IIC_GetAck();
+  25   1          IIC_SendStop();
+  26   1      } 
 
 
 MODULE INFORMATION:   STATIC OVERLAYABLE
-   CODE SIZE        =    101    ----
+   CODE SIZE        =     80    ----
    CONSTANT SIZE    =   ----    ----
    XDATA SIZE       =   ----    ----
    PDATA SIZE       =   ----    ----
-   DATA SIZE        =   ----    ----
+   DATA SIZE        =   ----       3
    IDATA SIZE       =   ----    ----
    BIT SIZE         =   ----    ----
-C51 COMPILER V9.60.7.0   PCF8591                                                           07/10/2025 18:14:35 PAGE 2   
-
 END OF MODULE INFORMATION.
 
 

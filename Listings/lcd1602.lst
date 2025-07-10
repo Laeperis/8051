@@ -1,4 +1,4 @@
-C51 COMPILER V9.60.7.0   LCD1602                                                           07/09/2025 23:42:15 PAGE 1   
+C51 COMPILER V9.60.7.0   LCD1602                                                           07/10/2025 20:49:39 PAGE 1   
 
 
 C51 COMPILER V9.60.7.0, COMPILATION OF MODULE LCD1602
@@ -62,7 +62,7 @@ line level    source
   52   2              LCD_WriteCmd((row==0?0x80:0xC0)+col+len-1-i);
   53   2              LCD_WriteData(num%10+'0');
   54   2              num /= 10;
-C51 COMPILER V9.60.7.0   LCD1602                                                           07/09/2025 23:42:15 PAGE 2   
+C51 COMPILER V9.60.7.0   LCD1602                                                           07/10/2025 20:49:39 PAGE 2   
 
   55   2          }
   56   1      } 

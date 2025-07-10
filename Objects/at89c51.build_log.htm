@@ -5,10 +5,10 @@
 <h2>Tool Versions:</h2>
 IDE-Version: ¦ÌVision V5.38.0.0
 Copyright (C) 2022 ARM Ltd and ARM Germany GmbH. All rights reserved.
-License Information: Laeperis Chen, 1, LIC=----
+License Information: Laeperis Chen, 1, LIC=14RJ7-E2N18-3A4DP-MX648-Y3ST3-4KMMX
  
 Tool Versions:
-Toolchain:       PK51 Prof. Develpers Kit  Version: 9.60.7.0
+Toolchain:       PK51 Prof. Developers Kit  Version: 9.60.7.0
 Toolchain Path:  E:\Keil_V5\C51\BIN
 C Compiler:      C51.exe V9.60.7.0
 Assembler:       A51.exe V8.2.7.0
@@ -32,12 +32,16 @@ linking...
     CALLER1: ?C_C51STARTUP
     CALLER2: ?PR?UART_ISR?MAIN
 *** WARNING L15: MULTIPLE CALL TO SEGMENT
+    SEGMENT: ?PR?PRINTF?PRINTF
+    CALLER1: ?C_C51STARTUP
+    CALLER2: ?PR?UART_ISR?MAIN
+*** WARNING L15: MULTIPLE CALL TO SEGMENT
     SEGMENT: ?PR?_LCD_SHOWSTRING?LCD1602
     CALLER1: ?C_C51STARTUP
     CALLER2: ?PR?UART_ISR?MAIN
-Program Size: data=75.5 xdata=0 code=2776
+Program Size: data=83.7 xdata=48 code=4346
 creating hex file from ".\Objects\at89c51"...
-".\Objects\at89c51" - 0 Error(s), 3 Warning(s).
+".\Objects\at89c51" - 0 Error(s), 4 Warning(s).
 Build Time Elapsed:  00:00:00
 </pre>
 </body>

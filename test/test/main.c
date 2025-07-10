@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include "lcd1602.h"
 #include "dht11.h"
+#include <string.h>
+#include <stdlib.h>
+#include <intrins.h> // 修正 _nop_ 错误
+#define u8 unsigned char // 修正 u8 未定义
+
+void UART_SendStr(char *str); // 添加函数原型声明，防止编译器警告
 
 sbit KEY = P3^2; // 启动/停止按键
 
@@ -11,7 +17,7 @@ volatile bit rx_flag = 0;
 // char debug[17]; // 全局变量（删除，调试用局部变量）
 
 // 优化：用于接收上位机回发的数字，缩短为6字节
-char num_buf[6]; // 最多存储"99 99\0"
+unsigned char xdata num_buf[12]; // 放到xdata区，减轻data压力
 unsigned char num_idx = 0;
 
 volatile unsigned char current_channel = 0; // 0=DHT11, 1=555频率
@@ -22,6 +28,101 @@ volatile unsigned char t0_count = 0;
 volatile unsigned int freq_count = 0; // 用于累加脉冲数量
 unsigned int freq_value = 0;        // 用于存放最终计算出的频率值
 static bit last_p32_state = 1;      // 用于检测P3.2引脚的下降沿
+
+// I2C/PCF8591相关定义
+sbit IIC_SDA = P1^1;
+sbit IIC_SCL = P1^0;
+#define PCF8591_WRITE_ADDR 0x90
+#define PCF8591_READ_ADDR  0x91
+
+void IIC_Delay() { _nop_(); _nop_(); _nop_(); }
+void IIC_SendStart(void) {
+    IIC_SDA=1; IIC_SCL=1; IIC_Delay();
+    IIC_SDA=0; IIC_Delay();
+    IIC_SCL=0;
+}
+void IIC_SendStop(void) {
+    IIC_SCL=0; IIC_SDA=0; IIC_Delay();
+    IIC_SCL=1; IIC_SDA=1; IIC_Delay();
+}
+u8 IIC_GetAck(void) {
+    u8 i=0; IIC_SDA=1; IIC_SCL=1;
+    while(IIC_SDA) { i++; if(i>250) { IIC_SCL=0; return 1; } }
+    IIC_SCL=0; return 0;
+}
+void IIC_SendOneByte(u8 dat) {
+    u8 j;
+    for(j=0;j<8;j++) {
+        IIC_SCL=0;
+        IIC_SDA=(dat&0x80)?1:0;
+        dat<<=1;
+        IIC_SCL=1; IIC_Delay();
+    }
+    IIC_SCL=0;
+}
+void PCF8591_SetDAC_Data(u8 val) {
+    IIC_SendStart();
+    IIC_SendOneByte(PCF8591_WRITE_ADDR);
+    IIC_GetAck();
+    IIC_SendOneByte(0x40); // 控制字节：DAC使能
+    IIC_GetAck();
+    IIC_SendOneByte(val);
+    IIC_GetAck();
+    IIC_SendStop();
+}
+void Delay100ms() {
+    unsigned char i, j;
+    for(i=0;i<20;i++) {
+        for(j=0;j<250;j++); // 1us*250*20=5ms*20=100ms
+    }
+}
+
+// 解析并输出温湿度减半值到DAC
+void handle_half_value(const char* str) {
+    int t = 0, h = 0;
+    UART_SendStr("[DEBUG] RAW BUF: ");
+    UART_SendStr(str);
+    UART_SendStr("\r\n");
+    sscanf(str, "%d %d", &t, &h);
+    // 先输出温度
+    PCF8591_SetDAC_Data((unsigned char)t);
+    UART_SendStr("[DEBUG] DAC OUT TEMP: ");
+    {
+        char xdata buf[8]; // 放到xdata区
+        unsigned int temp_val = (unsigned char)t;
+        sprintf(buf, "%u\r\n", temp_val);
+        UART_SendStr(buf);
+    }
+    Delay100ms();
+    // 再输出湿度
+    PCF8591_SetDAC_Data((unsigned char)h);
+    UART_SendStr("[DEBUG] DAC OUT HUMI: ");
+    {
+        char xdata buf[8]; // 放到xdata区
+        unsigned int humi_val = (unsigned char)h;
+        sprintf(buf, "%u\r\n", humi_val);
+        UART_SendStr(buf);
+    }
+    Delay100ms();
+}
+
+// 新增：解析并输出减半频率值到DAC
+void handle_half_freq(const char* str) {
+    int f = 0;
+    UART_SendStr("[DEBUG] RAW FREQ BUF: ");
+    UART_SendStr(str);
+    UART_SendStr("\r\n");
+    sscanf(str, "%d", &f);
+    PCF8591_SetDAC_Data((unsigned char)f);
+    UART_SendStr("[DEBUG] DAC OUT FREQ: ");
+    {
+        char xdata buf[8];
+        unsigned int freq_val = (unsigned char)f;
+        sprintf(buf, "%u\r\n", freq_val);
+        UART_SendStr(buf);
+    }
+    Delay100ms();
+}
 
 void UART_Init() {
     SCON = 0x50;      // 8位数据,可变波特率
@@ -77,6 +178,11 @@ void UART_ISR() interrupt 4 {
                 UART_SendStr("HALF VALUE: "); // 保留调试信息
                 UART_SendStr(num_buf);
                 UART_SendStr("\r\n");
+                if(current_channel == 0) { // 只在温湿度通道处理
+                    handle_half_value(num_buf); // 将减半值输出到DAC
+                } else if(current_channel == 1) { // 频率通道处理
+                    handle_half_freq(num_buf); // 新增：将减半频率值输出到DAC
+                }
                 num_idx = 0;
             }
         } else {
@@ -124,7 +230,7 @@ sbit FREQ_IN = P3^2;
 void main() {
     // 简化局部变量，只保留必要的
     unsigned char temp, humi;
-    char buf[20];
+    char xdata buf[20]; // 放到xdata区
 
     UART_SendStr("[DEBUG] UART_Init\r\n");
     UART_Init();
