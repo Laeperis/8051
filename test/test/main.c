@@ -8,10 +8,10 @@ sbit KEY = P3^2; // 启动/停止按键
 bit collect_flag = 0; // 采集标志
 volatile char last_rx = 0;
 volatile bit rx_flag = 0;
-char debug[17]; // 全局变量
+// char debug[17]; // 全局变量（删除，调试用局部变量）
 
-// 新增：用于接收上位机回发的数字
-char num_buf[16];
+// 优化：用于接收上位机回发的数字，缩短为6字节
+char num_buf[6]; // 最多存储"99 99\0"
 unsigned char num_idx = 0;
 
 volatile unsigned char current_channel = 0; // 0=DHT11, 1=555频率
@@ -68,12 +68,13 @@ void UART_ISR() interrupt 4 {
         RI = 0;
         // 判断是否为数字、空格或回车
         if((ch >= '0' && ch <= '9') || ch == ' '){
-            num_buf[num_idx++] = ch;
-            if(num_idx >= sizeof(num_buf)-1) num_idx = 0; // 防止溢出
+            if(num_idx < sizeof(num_buf) - 1) {
+                num_buf[num_idx++] = ch;
+            }
         } else if(ch == '\r' || ch == '\n') {
             if(num_idx > 0) {
                 num_buf[num_idx] = '\0';
-                UART_SendStr("HALF VALUE: ");
+                UART_SendStr("HALF VALUE: "); // 保留调试信息
                 UART_SendStr(num_buf);
                 UART_SendStr("\r\n");
                 num_idx = 0;
@@ -82,23 +83,22 @@ void UART_ISR() interrupt 4 {
             // 其他命令处理
             last_rx = ch;
             rx_flag = 1;
-            // 1. Update state variables based on command
             if(last_rx == 'S') collect_flag = 1;
             if(last_rx == 'E') collect_flag = 0;
             if(last_rx == 'A') {
                 current_channel = 0;
-                freq_count = 0;       // 切换通道时，清零脉冲计数
-                freq_sample_flag = 0; // 清除可能残留的采样标志
-                LCD_ShowString(0,0,"                "); // 清空第一行
-                LCD_ShowString(1,0,"                "); // 清空第二行
+                freq_count = 0;
+                freq_sample_flag = 0;
+                LCD_ShowString(0,0,"                ");
+                LCD_ShowString(1,0,"                ");
             }
             if(last_rx == 'B') {
                 current_channel = 1;
-                freq_count = 0;       // 切换通道时，清零脉冲计数
-                t0_count = 0;         // 同时复位1秒定时器的中间计数
-                freq_sample_flag = 0; // 清除可能残留的采样标志
-                LCD_ShowString(0,0,"                "); // 清空第一行
-                LCD_ShowString(1,0,"                "); // 清空第二行
+                freq_count = 0;
+                t0_count = 0;
+                freq_sample_flag = 0;
+                LCD_ShowString(0,0,"                ");
+                LCD_ShowString(1,0,"                ");
             }
         }
     }

@@ -2,7 +2,7 @@
 #include "dht11.h"
 #include <intrins.h>
 
-sbit DHT11_IO = P1^0;
+sbit DHT11_IO = P3^3;
 char datas[5];
 
 void Delay40us() {
