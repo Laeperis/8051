@@ -9,6 +9,7 @@
     <origin x="0" y="0"/>
    </editor>
   </WINDOW>
+  <WINDOW type="default" module="DXP"/>
  </FRAME>
  <MODULE name="ARES">
   <editor metric="0" gridmajor="0" mode="00000000" zoom="10" scale="10" flipped="0" gridminor="0" gridmode="32" snapidx="3" snap="0" xcursor="0" orgmode="0" snaprange="0">
@@ -26,9 +27,9 @@
  </MODULE>
  <MODULE name="VSMDEBUG">
   <PWI>
-   <POPUP w="800" x="57" flags="00000002" y="190" h="200" pid="0" iid="-1">
+   <POPUP w="800" x="772" flags="00000003" y="557" h="200" pid="0" iid="-1">
     <PROPERTIES>
-     <ITEM name="Message Column Width">-150</ITEM>
+     <ITEM name="Message Column Width">550</ITEM>
      <ITEM name="ShowGrid">No</ITEM>
      <ITEM name="Source Column Width">100</ITEM>
      <ITEM name="Time Column Width">120</ITEM>
@@ -60,13 +61,13 @@
    <POPUP w="1384" x="0" flags="00000000" y="480" h="888" pid="0" iid="22">
     <PROPERTIES/>
    </POPUP>
-   <POPUP w="450" x="348" flags="00008023" y="302" h="250" pid="0" iid="12">
+   <POPUP w="450" x="1462" flags="00008023" y="482" h="250" pid="0" iid="12">
     <PROPERTIES>
      <ITEM name="AutoEcho">0</ITEM>
      <ITEM name="HexMode">0</ITEM>
     </PROPERTIES>
    </POPUP>
-   <POPUP w="450" x="1752" flags="00000023" y="287" h="250" pid="0" iid="17">
+   <POPUP w="450" x="829" flags="00000023" y="270" h="250" pid="0" iid="17">
     <PROPERTIES>
      <ITEM name="AutoEcho">0</ITEM>
      <ITEM name="HexMode">0</ITEM>
