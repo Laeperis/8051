@@ -34,6 +34,10 @@ sbit IIC_SDA = P1^1;
 sbit IIC_SCL = P1^0;
 #define PCF8591_WRITE_ADDR 0x90
 #define PCF8591_READ_ADDR  0x91
+//报警LED定义
+sbit LED1 = P1^2;
+sbit LED2 = P1^3;
+sbit LED3 = P1^4;
 
 void IIC_Delay() { _nop_(); _nop_(); _nop_(); }
 void IIC_SendStart(void) {
@@ -206,6 +210,30 @@ void UART_ISR() interrupt 4 {
                 LCD_ShowString(0,0,"                ");
                 LCD_ShowString(1,0,"                ");
             }
+            if(last_rx == 'X'){
+                LED1 = 0;
+                UART_SendStr("TEMPER ALARM\r\n");
+            }
+            if(last_rx == 'Y'){
+                LED2 = 0;
+                UART_SendStr("HUMI ALARM\r\n");
+            }
+            if(last_rx == 'Z'){
+                LED3 = 0;
+                UART_SendStr("FREQ ALARM\r\n");
+            }
+            if(last_rx == 'x'){
+                LED1 = 1;
+                UART_SendStr("TEMPER NORMAL\r\n");
+            }
+            if(last_rx == 'y'){
+                LED2 = 1;
+                UART_SendStr("HUMI NORMAL\r\n");
+            }
+            if(last_rx == 'z'){
+                LED3 = 1;
+                UART_SendStr("FREQ NORMAL\r\n");
+            }
         }
     }
 }
@@ -256,6 +284,7 @@ void main() {
             if(current_channel == 1) { // 555频率测量 (硬件中断计数法)
                 // 轮询代码已删除，计数在后台由INT0_ISR自动完成
                 if(freq_sample_flag) {
+                   
                     freq_sample_flag = 0; // 清除标志，为下个周期做准备
 
                     EA = 0; // 关总中断，保证原子操作
@@ -271,6 +300,7 @@ void main() {
             } else if(current_channel == 0) { // DHT11温湿度
                 // freq_count = 0; // 确保在DHT11模式下，频率计数器是清零的
                 if (freq_sample_flag) { // 复用1秒的定时器门控
+                    
                     freq_sample_flag = 0;
                     
                     EA = 0; // 关闭总中断
