@@ -4,13 +4,13 @@ import serial.tools.list_ports
 import re
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QComboBox, QTextEdit, QMessageBox, QLineEdit, QFormLayout
+    QComboBox, QTextEdit, QMessageBox, QLineEdit, QFormLayout, QSlider
 )
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QPalette, QBrush, QPixmap, QPainter, QColor, QImage
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
-import PyQt5.QtCore as QtCore
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QMenu
 
 class SerialThread(QThread):
     data_received = pyqtSignal(str)
@@ -38,6 +38,14 @@ class SerialThread(QThread):
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
+        # 先定义 set_label_shadow，确保后续所有 label 创建前可用
+        def set_label_shadow(label):
+            effect = QGraphicsDropShadowEffect()
+            effect.setBlurRadius(0)
+            effect.setColor(QColor(0,0,0))
+            effect.setOffset(1, 1)
+            label.setGraphicsEffect(effect)
+            label.setStyleSheet("color: white; font-weight: bold; font-size: 20px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;")
         self.setWindowTitle("温湿度/频率监控上位机")
         self.ser = None
         self.serial_thread = None
@@ -55,13 +63,17 @@ class MainWindow(QWidget):
         self.channel_label = QLabel("采集通道:")
         self.channel_combo = QComboBox()
         self.channel_combo.addItems(["温湿度", "频率"])
-        self.channel_combo.setCurrentIndex(1)
+        self.channel_combo.setCurrentIndex(0)  # 默认选择温湿度
         self.channel_combo.currentIndexChanged.connect(self.change_channel)
 
         # 串口选择
         self.port_label = QLabel("串口号:")
         self.port_combo = QComboBox()
         self.refresh_ports()
+        # 默认选择COM2（如果存在）
+        idx = self.port_combo.findText("COM2")
+        if idx != -1:
+            self.port_combo.setCurrentIndex(idx)
         self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.clicked.connect(self.refresh_ports)
 
@@ -91,55 +103,68 @@ class MainWindow(QWidget):
         self.text_area = QTextEdit()
         self.text_area.setReadOnly(True)
 
-        # 阈值输入框
+        # 阈值标题标签和单位/分隔符，必须在布局前定义
+        self.temp_thresh_title = QLabel("温度范围:")
+        self.humi_thresh_title = QLabel("湿度范围:")
+        self.freq_thresh_title = QLabel("频率范围:")
+        def set_small_label_shadow(label):
+            effect = QGraphicsDropShadowEffect()
+            effect.setBlurRadius(0)
+            effect.setColor(QColor(0,0,0))
+            effect.setOffset(1, 1)
+            label.setGraphicsEffect(effect)
+            label.setStyleSheet("color: white; font-weight: bold; font-size: 16px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;")
+        set_small_label_shadow(self.temp_thresh_title)
+        set_small_label_shadow(self.humi_thresh_title)
+        set_small_label_shadow(self.freq_thresh_title)
+        # 美化中间符号和单位
+        self.temp_range_sep = QLabel("~")
+        self.temp_range_unit = QLabel("℃")
+        set_small_label_shadow(self.temp_range_sep)
+        set_small_label_shadow(self.temp_range_unit)
+        self.humi_range_sep = QLabel("~")
+        self.humi_range_unit = QLabel("%")
+        set_small_label_shadow(self.humi_range_sep)
+        set_small_label_shadow(self.humi_range_unit)
+        self.freq_range_sep = QLabel("~")
+        self.freq_range_unit = QLabel("Hz")
+        set_small_label_shadow(self.freq_range_sep)
+        set_small_label_shadow(self.freq_range_unit)
+
+        # 阈值输入框（QLineEdit）
         self.temp_min_edit = QLineEdit("0")
-        self.temp_max_edit = QLineEdit("100")
+        self.temp_max_edit = QLineEdit("40")
         self.humi_min_edit = QLineEdit("0")
-        self.humi_max_edit = QLineEdit("100")
+        self.humi_max_edit = QLineEdit("90")
         self.freq_min_edit = QLineEdit("0")
-        self.freq_max_edit = QLineEdit("10000")
+        self.freq_max_edit = QLineEdit("6000")
         for edit in [self.temp_min_edit, self.temp_max_edit, self.humi_min_edit, self.humi_max_edit, self.freq_min_edit, self.freq_max_edit]:
             edit.setFixedWidth(60)
             edit.setStyleSheet("background: rgba(255,255,255,180); color: #222; border-radius: 6px; border: 1px solid #bbb; font-size: 15px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif; padding: 2px 6px;")
 
-        # 阈值确认按钮
-        self.temp_thresh_btn = QPushButton("确认")
-        self.humi_thresh_btn = QPushButton("确认")
-        self.freq_thresh_btn = QPushButton("确认")
-        for btn in [self.temp_thresh_btn, self.humi_thresh_btn, self.freq_thresh_btn]:
-            btn.setFixedWidth(60)
-            btn.setStyleSheet("background: rgba(255,255,255,180); color: #222; border-radius: 6px; border: 1px solid #bbb; font-size: 15px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif; padding: 2px 6px;")
-
-        self.temp_thresh_btn.clicked.connect(lambda: QMessageBox.information(self, "提示", "温度阈值已更新"))
-        self.humi_thresh_btn.clicked.connect(lambda: QMessageBox.information(self, "提示", "湿度阈值已更新"))
-        self.freq_thresh_btn.clicked.connect(lambda: QMessageBox.information(self, "提示", "频率阈值已更新"))
-
-        # 阈值布局
+        # 阈值布局（输入框+单位）
         self.temp_thresh_layout = QHBoxLayout()
-        self.temp_thresh_layout.addWidget(QLabel("温度阈值:"))
+        self.temp_thresh_layout.addWidget(self.temp_thresh_title)
         self.temp_thresh_layout.addWidget(self.temp_min_edit)
-        self.temp_thresh_layout.addWidget(QLabel("~"))
+        self.temp_thresh_layout.addWidget(self.temp_range_sep)
         self.temp_thresh_layout.addWidget(self.temp_max_edit)
-        self.temp_thresh_layout.addWidget(QLabel("℃"))
-        self.temp_thresh_layout.addWidget(self.temp_thresh_btn)
+        self.temp_thresh_layout.addWidget(self.temp_range_unit)
         self.temp_thresh_layout.addStretch(1)
 
         self.humi_thresh_layout = QHBoxLayout()
-        self.humi_thresh_layout.addWidget(QLabel("湿度阈值:"))
+        self.humi_thresh_layout.addWidget(self.humi_thresh_title)
         self.humi_thresh_layout.addWidget(self.humi_min_edit)
-        self.humi_thresh_layout.addWidget(QLabel("~"))
+        self.humi_thresh_layout.addWidget(self.humi_range_sep)
         self.humi_thresh_layout.addWidget(self.humi_max_edit)
-        self.humi_thresh_layout.addWidget(QLabel("%"))
-        self.humi_thresh_layout.addWidget(self.humi_thresh_btn)
+        self.humi_thresh_layout.addWidget(self.humi_range_unit)
         self.humi_thresh_layout.addStretch(1)
 
         self.freq_thresh_layout = QHBoxLayout()
-        self.freq_thresh_layout.addWidget(QLabel("频率阈值:"))
+        self.freq_thresh_layout.addWidget(self.freq_thresh_title)
         self.freq_thresh_layout.addWidget(self.freq_min_edit)
-        self.freq_thresh_layout.addWidget(QLabel("~"))
+        self.freq_thresh_layout.addWidget(self.freq_range_sep)
         self.freq_thresh_layout.addWidget(self.freq_max_edit)
-        self.freq_thresh_layout.addWidget(QLabel("Hz"))
-        self.freq_thresh_layout.addWidget(self.freq_thresh_btn)
+        self.freq_thresh_layout.addWidget(self.freq_range_unit)
         self.freq_thresh_layout.addStretch(1)
 
         # 优化按钮大小和样式（白底半透明，禁用更灰）
@@ -192,8 +217,12 @@ class MainWindow(QWidget):
         self.channel_combo.setStyleSheet(combo_style)
         self.port_combo.setStyleSheet(combo_style)
 
-        # 添加调试信号按钮
-        self.debug_btns = []
+        # 合并调试按钮为一个下拉菜单弹窗选择信号发送
+        self.debug_btn = QPushButton("调试信号发送")
+        self.debug_btn.setMinimumWidth(120)
+        self.debug_btn.setMinimumHeight(36)
+        self.debug_btn.setStyleSheet(button_style)
+        self.debug_menu = QMenu()
         debug_signals = [
             ("发送X", b'X'),
             ("发送Y", b'Y'),
@@ -203,16 +232,11 @@ class MainWindow(QWidget):
             ("发送z", b'z'),
         ]
         for label, sig in debug_signals:
-            btn = QPushButton(label)
-            btn.setMinimumWidth(80)
-            btn.setMinimumHeight(32)
-            btn.setStyleSheet("background: rgba(255,255,255,180); color: #222; border-radius: 6px; border: 1px solid #bbb; font-size: 15px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif; padding: 2px 8px;")
-            btn.clicked.connect(lambda _, s=sig: self.send_debug_signal(s))
-            self.debug_btns.append(btn)
+            self.debug_menu.addAction(label, lambda checked=False, s=sig: self.send_debug_signal(s))
+        self.debug_btn.setMenu(self.debug_menu)
         # 调试按钮布局
         self.debug_btn_layout = QHBoxLayout()
-        for btn in self.debug_btns:
-            self.debug_btn_layout.addWidget(btn)
+        self.debug_btn_layout.addWidget(self.debug_btn)
         self.debug_btn_layout.addStretch(1)
 
         # 分散对齐布局
@@ -226,45 +250,96 @@ class MainWindow(QWidget):
         h1.addWidget(self.port_combo)
         h1.addStretch(1)
         h1.addWidget(self.refresh_btn)
-        h1.addWidget(self.open_btn)
-        h1.addWidget(self.close_btn)
 
-        h2 = QHBoxLayout()
-        h2.addWidget(self.start_btn)
-        h2.addStretch(1)
-        h2.addWidget(self.stop_btn)
+        # 控制按钮水平布局（右下角）
+        control_btn_hlayout = QHBoxLayout()
+        control_btn_hlayout.addWidget(self.open_btn)
+        control_btn_hlayout.addWidget(self.close_btn)
+        control_btn_hlayout.addWidget(self.start_btn)
+        control_btn_hlayout.addWidget(self.stop_btn)
+        control_btn_hlayout.setSpacing(16)
 
-        v = QVBoxLayout()
-        v.addLayout(h0)
-        v.addLayout(h1)
-        v.addLayout(h2)
-        v.addLayout(self.debug_btn_layout)  # 添加调试按钮布局
-        v.addLayout(self.temp_thresh_layout)
-        v.addLayout(self.humi_thresh_layout)
-        v.addLayout(self.freq_thresh_layout)
-        v.addWidget(self.temp_label)
-        v.addWidget(self.humi_label)
-        v.addWidget(self.freq_label)
-        v.addWidget(self.half_temp_label)
-        v.addWidget(self.half_humi_label)
-        v.addWidget(self.half_freq_label)
-        v.addWidget(self.text_area)
-        self.setLayout(v)
-        self.update_channel_ui()
+        # 底部按钮区：左调试，右控制
+        bottom_hlayout = QHBoxLayout()
+        bottom_hlayout.addWidget(self.debug_btn)
+        bottom_hlayout.addStretch(1)
+        bottom_hlayout.addLayout(control_btn_hlayout)
+        bottom_hlayout.setContentsMargins(10, 10, 10, 10)
+        bottom_hlayout.setSpacing(32)
+
+        # 温度范围和湿度范围水平两端对齐放置
+        self.temp_humi_row_layout = QHBoxLayout()
+        self.temp_humi_row_layout.addLayout(self.temp_thresh_layout)
+        self.temp_humi_row_layout.addStretch(1)
+        self.temp_humi_row_layout.addLayout(self.humi_thresh_layout)
+
+        # 主界面左右布局
+        left_v = QVBoxLayout()
+        left_v.addLayout(h0)
+        left_v.addLayout(h1)
+        left_v.addSpacing(16)
+        left_v.addLayout(self.temp_humi_row_layout)
+        left_v.addLayout(self.freq_thresh_layout)
+        left_v.addSpacing(8)
+        # 温湿度并排左，减半温湿度并排右
+        temp_humi_full_row = QHBoxLayout()
+        temp_humi_left = QHBoxLayout()
+        temp_humi_left.addWidget(self.temp_label)
+        temp_humi_left.addWidget(self.humi_label)
+        temp_humi_right = QHBoxLayout()
+        temp_humi_right.addWidget(self.half_temp_label)
+        temp_humi_right.addWidget(self.half_humi_label)
+        temp_humi_full_row.addLayout(temp_humi_left)
+        temp_humi_full_row.addStretch(1)
+        temp_humi_full_row.addLayout(temp_humi_right)
+        left_v.addLayout(temp_humi_full_row)
+        # 频率两端对齐
+        freq_row = QHBoxLayout()
+        freq_row.addWidget(self.freq_label)
+        freq_row.addWidget(self.half_freq_label)
+        left_v.addLayout(freq_row)
+        left_v.addStretch(1)
+
+        # 右侧区域（串口信息区）
+        right_v = QVBoxLayout()
+        self.text_area.setMaximumWidth(int(self.width() * 0.4))
+        self.text_area.setStyleSheet("background: rgba(0,0,0,128); color: white; border: 2px solid #fff; border-radius: 8px;")
+        right_v.addWidget(self.text_area)
+
+        # 主体水平布局
+        main_h = QHBoxLayout()
+        main_h.addLayout(left_v, 2)
+        main_h.addLayout(right_v, 3)
+
+        # 最外层VBoxLayout，底部一行按钮
+        main_v = QVBoxLayout()
+        main_v.addLayout(main_h)
+        main_v.addLayout(bottom_hlayout)
+        self.setLayout(main_v)
+        self.change_channel(0)
 
         # 设置text_area为半透明
         self.text_area.setStyleSheet("background: rgba(0,0,0,128); color: white;")
 
-        # 设置所有label为白色加黑色描边，字体更大，微软雅黑
-        def set_label_shadow(label):
+        # 统一所有label样式为频率样式
+        for label in [self.channel_label, self.port_label, self.temp_label, self.humi_label, self.freq_label, self.half_temp_label, self.half_humi_label, self.half_freq_label]:
+            set_label_shadow(label)
+
+        # 设置温度、湿度、减半温度、减半湿度、频率、减半频率字号调小，两端对齐
+        def set_small_label_shadow_align(label, align):
             effect = QGraphicsDropShadowEffect()
             effect.setBlurRadius(0)
             effect.setColor(QColor(0,0,0))
             effect.setOffset(1, 1)
             label.setGraphicsEffect(effect)
-            label.setStyleSheet("color: white; font-weight: bold; font-size: 20px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;")
-        for label in [self.channel_label, self.port_label, self.temp_label, self.humi_label, self.freq_label, self.half_temp_label, self.half_humi_label, self.half_freq_label]:
-            set_label_shadow(label)
+            label.setStyleSheet("color: white; font-weight: bold; font-size: 16px; font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;")
+            label.setAlignment(align)
+        set_small_label_shadow_align(self.temp_label, Qt.AlignLeft) # type: ignore
+        set_small_label_shadow_align(self.humi_label, Qt.AlignRight) # type: ignore
+        set_small_label_shadow_align(self.half_temp_label, Qt.AlignLeft) # type: ignore
+        set_small_label_shadow_align(self.half_humi_label, Qt.AlignRight) # type: ignore
+        set_small_label_shadow_align(self.freq_label, Qt.AlignLeft) # type: ignore
+        set_small_label_shadow_align(self.half_freq_label, Qt.AlignRight) # type: ignore
 
         # 设置背景图片（自适应窗口大小+淡灰色蒙版）
         import os
@@ -342,7 +417,7 @@ class MainWindow(QWidget):
 
     def start_collect(self):
         if self.ser and self.ser.is_open:
-            self.ser.write(b'S')
+            self.ser.write(b'CMD:S\r\n')
             self.text_area.append("已发送启动命令")
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
@@ -351,7 +426,7 @@ class MainWindow(QWidget):
 
     def stop_collect(self):
         if self.ser and self.ser.is_open:
-            self.ser.write(b'E')
+            self.ser.write(b'CMD:E\r\n')
             self.text_area.append("已发送停止命令")
             self.start_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
@@ -366,10 +441,10 @@ class MainWindow(QWidget):
     def send_channel_cmd(self):
         if self.ser and self.ser.is_open:
             if self.current_channel == 0:
-                self.ser.write(b'A')  # 温湿度
+                self.ser.write(b'CMD:A\r\n')  # 温湿度
                 self.text_area.append("切换到温湿度通道")
             else:
-                self.ser.write(b'B')  # 频率
+                self.ser.write(b'CMD:B\r\n')  # 频率
                 self.text_area.append("切换到频率通道")
 
     def update_channel_ui(self):
@@ -384,12 +459,12 @@ class MainWindow(QWidget):
             for l in [self.temp_thresh_layout, self.humi_thresh_layout]:
                 for i in range(l.count()):
                     item = l.itemAt(i)
-                    w = item.widget()
+                    w = item.widget() # type: ignore
                     if w is not None:
                         w.setVisible(True)
             for i in range(self.freq_thresh_layout.count()):
                 item = self.freq_thresh_layout.itemAt(i)
-                w = item.widget()
+                w = item.widget() # type: ignore
                 if w is not None:
                     w.setVisible(False)
         else:
@@ -403,12 +478,12 @@ class MainWindow(QWidget):
             for l in [self.temp_thresh_layout, self.humi_thresh_layout]:
                 for i in range(l.count()):
                     item = l.itemAt(i)
-                    w = item.widget()
+                    w = item.widget() # type: ignore
                     if w is not None:
                         w.setVisible(False)
             for i in range(self.freq_thresh_layout.count()):
                 item = self.freq_thresh_layout.itemAt(i)
-                w = item.widget()
+                w = item.widget() # type: ignore
                 if w is not None:
                     w.setVisible(True)
 
@@ -427,9 +502,7 @@ class MainWindow(QWidget):
                 half_h = h // 2
                 self.half_temp_label.setText(f"减半温度: {half_t} ℃")
                 self.half_humi_label.setText(f"减半湿度: {half_h} %")
-                # 回发减半后的数字，格式："{half_t} {half_h}\r\n"
-                if self.ser and self.ser.is_open:
-                    self.ser.write(f"{half_t} {half_h}\r\n".encode())
+                
                 # 阈值判断
                 try:
                     tmin = float(self.temp_min_edit.text())
@@ -438,29 +511,39 @@ class MainWindow(QWidget):
                     hmax = float(self.humi_max_edit.text())
                 except Exception:
                     tmin, tmax, hmin, hmax = 0, 100, 0, 100
+                
+                # 检查是否需要发送报警信号
+                temp_alarm_needed = (t < tmin or t > tmax) != self.temp_alarm_on
+                humi_alarm_needed = (h < hmin or h > hmax) != self.humi_alarm_on
+                
                 if self.ser and self.ser.is_open:
-                    # 温度报警逻辑
-                    if t < tmin or t > tmax:
-                        if not self.temp_alarm_on:
-                            self.send_debug_signal(b'X')
-                            self.text_area.append("温度超出阈值，已发送'X'")
-                            self.temp_alarm_on = True
+                    # 如果需要发送报警信号，则不回发减半数据
+                    if temp_alarm_needed or humi_alarm_needed:
+                        # 温度报警逻辑
+                        if t < tmin or t > tmax:
+                            if not self.temp_alarm_on:
+                                self.send_debug_signal(b'X')
+                                self.text_area.append("温度超出阈值，已发送'X'")
+                                self.temp_alarm_on = True
+                        else:
+                            if self.temp_alarm_on:
+                                self.send_debug_signal(b'x')
+                                self.text_area.append("温度恢复正常，已发送'x'")
+                                self.temp_alarm_on = False
+                        # 湿度报警逻辑
+                        if h < hmin or h > hmax:
+                            if not self.humi_alarm_on:
+                                self.send_debug_signal(b'Y')
+                                self.text_area.append("湿度超出阈值，已发送'Y'")
+                                self.humi_alarm_on = True
+                        else:
+                            if self.humi_alarm_on:
+                                self.send_debug_signal(b'y')
+                                self.text_area.append("湿度恢复正常，已发送'y'")
+                                self.humi_alarm_on = False
                     else:
-                        if self.temp_alarm_on:
-                            self.send_debug_signal(b'x')
-                            self.text_area.append("温度恢复正常，已发送'x'")
-                            self.temp_alarm_on = False
-                    # 湿度报警逻辑
-                    if h < hmin or h > hmax:
-                        if not self.humi_alarm_on:
-                            self.send_debug_signal(b'Y')
-                            self.text_area.append("湿度超出阈值，已发送'Y'")
-                            self.humi_alarm_on = True
-                    else:
-                        if self.humi_alarm_on:
-                            self.send_debug_signal(b'y')
-                            self.text_area.append("湿度恢复正常，已发送'y'")
-                            self.humi_alarm_on = False
+                        # 不需要报警时，回发减半数据
+                        self.ser.write(f"{half_t} {half_h}\r\n".encode())
         else:
             # 解析频率
             match = re.search(r"FREQ:(\d+)", line)
@@ -469,32 +552,45 @@ class MainWindow(QWidget):
                 self.freq_label.setText(f"频率: {f} Hz")
                 half_f = f // 2
                 self.half_freq_label.setText(f"减半频率: {half_f} Hz")
-                # 回发减半后的数字，格式："{half_f}\r\n"
-                if self.ser and self.ser.is_open:
-                    self.ser.write(f"{half_f}\r\n".encode())
+                
                 # 阈值判断
                 try:
                     fmin = float(self.freq_min_edit.text())
                     fmax = float(self.freq_max_edit.text())
                 except Exception:
                     fmin, fmax = 0, 10000
+                
+                # 检查是否需要发送报警信号
+                freq_alarm_needed = (f < fmin or f > fmax) != self.freq_alarm_on
+                
                 if self.ser and self.ser.is_open:
-                    # 频率报警逻辑
-                    if f < fmin or f > fmax:
-                        if not self.freq_alarm_on:
-                            self.send_debug_signal(b'Z')
-                            self.text_area.append("频率超出阈值，已发送'Z'")
-                            self.freq_alarm_on = True
+                    # 如果需要发送报警信号，则不回发减半数据
+                    if freq_alarm_needed:
+                        # 频率报警逻辑
+                        if f < fmin or f > fmax:
+                            if not self.freq_alarm_on:
+                                self.send_debug_signal(b'Z')
+                                self.text_area.append("频率超出阈值，已发送'Z'")
+                                self.freq_alarm_on = True
+                        else:
+                            if self.freq_alarm_on:
+                                self.send_debug_signal(b'z')
+                                self.text_area.append("频率恢复正常，已发送'z'")
+                                self.freq_alarm_on = False
                     else:
-                        if self.freq_alarm_on:
-                            self.send_debug_signal(b'z')
-                            self.text_area.append("频率恢复正常，已发送'z'")
-                            self.freq_alarm_on = False
+                        # 不需要报警时，回发减半数据
+                        self.ser.write(f"{half_f}\r\n".encode())
 
     def send_debug_signal(self, sig):
         if self.ser and self.ser.is_open:
-            self.ser.write(sig)
-            self.text_area.append(f"已发送调试信号: {sig.decode(errors='ignore')}")
+            # 统一发送带 CMD: 前缀的命令
+            if isinstance(sig, bytes):
+                sig_str = sig.decode(errors='ignore').strip()
+            else:
+                sig_str = str(sig).strip()
+            cmd = f"CMD:{sig_str}\r\n".encode()
+            self.ser.write(cmd)
+            self.text_area.append(f"已发送调试信号: CMD:{sig_str}")
         else:
             QMessageBox.warning(self, "错误", "串口未打开，无法发送调试信号")
 

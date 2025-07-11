@@ -171,68 +171,70 @@ void UART_ISR() interrupt 4 {
     if(RI) {
         char ch = SBUF;
         RI = 0;
-        // 判断是否为数字、空格或回车
-        if((ch >= '0' && ch <= '9') || ch == ' '){
-            if(num_idx < sizeof(num_buf) - 1) {
-                num_buf[num_idx++] = ch;
-            }
-        } else if(ch == '\r' || ch == '\n') {
+        // 接收一行，遇到回车/换行处理
+        if(num_idx < sizeof(num_buf) - 1 && ch != '\r' && ch != '\n') {
+            num_buf[num_idx++] = ch;
+        }
+        if(ch == '\r' || ch == '\n') {
             if(num_idx > 0) {
                 num_buf[num_idx] = '\0';
-                UART_SendStr("HALF VALUE: "); // 保留调试信息
-                UART_SendStr(num_buf);
-                UART_SendStr("\r\n");
-                if(current_channel == 0) { // 只在温湿度通道处理
-                    handle_half_value(num_buf); // 将减半值输出到DAC
-                } else if(current_channel == 1) { // 频率通道处理
-                    handle_half_freq(num_buf); // 新增：将减半频率值输出到DAC
+                // 判断是否为命令行
+                if(strncmp((char*)num_buf, "CMD:", 4) == 0 && num_idx >= 5) {
+                    char cmd = num_buf[4];
+                    // 处理命令
+                    if(cmd == 'S') collect_flag = 1;
+                    if(cmd == 'E') collect_flag = 0;
+                    if(cmd == 'A') {
+                        current_channel = 0;
+                        freq_count = 0;
+                        freq_sample_flag = 0;
+                        LCD_ShowString(0,0,"                ");
+                        LCD_ShowString(1,0,"                ");
+                    }
+                    if(cmd == 'B') {
+                        current_channel = 1;
+                        freq_count = 0;
+                        t0_count = 0;
+                        freq_sample_flag = 0;
+                        LCD_ShowString(0,0,"                ");
+                        LCD_ShowString(1,0,"                ");
+                    }
+                    if(cmd == 'X'){
+                        LED1 = 0;
+                        UART_SendStr("TEMPER ALARM\r\n");
+                    }
+                    if(cmd == 'Y'){
+                        LED2 = 0;
+                        UART_SendStr("HUMI ALARM\r\n");
+                    }
+                    if(cmd == 'Z'){
+                        LED3 = 0;
+                        UART_SendStr("FREQ ALARM\r\n");
+                    }
+                    if(cmd == 'x'){
+                        LED1 = 1;
+                        UART_SendStr("TEMPER NORMAL\r\n");
+                    }
+                    if(cmd == 'y'){
+                        LED2 = 1;
+                        UART_SendStr("HUMI NORMAL\r\n");
+                    }
+                    if(cmd == 'z'){
+                        LED3 = 1;
+                        UART_SendStr("FREQ NORMAL\r\n");
+                    }
+                } else {
+                    // 不是命令，按原有数据处理
+                    UART_SendStr("HALF VALUE: ");
+                    UART_SendStr((char*)num_buf);
+                    UART_SendStr("\r\n");
+                    if(current_channel == 0) {
+                        handle_half_value((char*)num_buf);
+                    } else if(current_channel == 1) {
+                        handle_half_freq((char*)num_buf);
+                    }
                 }
                 num_idx = 0;
-            }
-        } else {
-            // 其他命令处理
-            last_rx = ch;
-            rx_flag = 1;
-            if(last_rx == 'S') collect_flag = 1;
-            if(last_rx == 'E') collect_flag = 0;
-            if(last_rx == 'A') {
-                current_channel = 0;
-                freq_count = 0;
-                freq_sample_flag = 0;
-                LCD_ShowString(0,0,"                ");
-                LCD_ShowString(1,0,"                ");
-            }
-            if(last_rx == 'B') {
-                current_channel = 1;
-                freq_count = 0;
-                t0_count = 0;
-                freq_sample_flag = 0;
-                LCD_ShowString(0,0,"                ");
-                LCD_ShowString(1,0,"                ");
-            }
-            if(last_rx == 'X'){
-                LED1 = 0;
-                UART_SendStr("TEMPER ALARM\r\n");
-            }
-            if(last_rx == 'Y'){
-                LED2 = 0;
-                UART_SendStr("HUMI ALARM\r\n");
-            }
-            if(last_rx == 'Z'){
-                LED3 = 0;
-                UART_SendStr("FREQ ALARM\r\n");
-            }
-            if(last_rx == 'x'){
-                LED1 = 1;
-                UART_SendStr("TEMPER NORMAL\r\n");
-            }
-            if(last_rx == 'y'){
-                LED2 = 1;
-                UART_SendStr("HUMI NORMAL\r\n");
-            }
-            if(last_rx == 'z'){
-                LED3 = 1;
-                UART_SendStr("FREQ NORMAL\r\n");
             }
         }
     }
@@ -329,5 +331,6 @@ void main() {
             LCD_ShowString(1,0,"              ");
             Delay1000ms();
         }
+        Delay100ms(); // 新增：每次主循环末尾短暂延时，降低CPU占用
     }
 } 
