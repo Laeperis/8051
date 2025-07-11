@@ -11,6 +11,9 @@ from PyQt5.QtGui import QPalette, QBrush, QPixmap, QPainter, QColor, QImage
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMenu
+import PyQt5.QtCore as QtCore
+import pyqtgraph as pg  
+from PyQt5.QtWidgets import QDial
 
 class SerialThread(QThread):
     data_received = pyqtSignal(str)
@@ -102,6 +105,23 @@ class MainWindow(QWidget):
         self.half_freq_label = QLabel("减半频率: -- Hz")
         self.text_area = QTextEdit()
         self.text_area.setReadOnly(True)
+
+        # 折线图相关
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setBackground(QColor(255, 255, 255, 220))  # 半透明白色背景
+        self.plot_widget.showGrid(x=True, y=True)
+        self.plot_widget.setLabel('left', '数值')
+        self.plot_widget.setLabel('bottom', '采样点')
+        plot_item = self.plot_widget.getPlotItem()
+        if plot_item is not None:
+            plot_item.getAxis('bottom').setTicks([[(i, str(i+1)) for i in range(10)]])
+        self.temp_curve = self.plot_widget.plot(pen=pg.mkPen('r', width=2), name='温度')
+        self.humi_curve = self.plot_widget.plot(pen=pg.mkPen('b', width=2), name='湿度')
+        self.freq_curve = self.plot_widget.plot(pen=pg.mkPen('g', width=2), name='频率')
+        self.data_len = 100
+        self.temp_data = []
+        self.humi_data = []
+        self.freq_data = []
 
         # 阈值标题标签和单位/分隔符，必须在布局前定义
         self.temp_thresh_title = QLabel("温度范围:")
@@ -244,6 +264,8 @@ class MainWindow(QWidget):
         h0.addWidget(self.channel_label)
         h0.addWidget(self.channel_combo)
         h0.addStretch(1)
+        for btn in [self.debug_btn]:
+            h0.addWidget(btn)
 
         h1 = QHBoxLayout()
         h1.addWidget(self.port_label)
@@ -259,11 +281,13 @@ class MainWindow(QWidget):
         control_btn_hlayout.addWidget(self.stop_btn)
         control_btn_hlayout.setSpacing(16)
 
-        # 底部按钮区：左调试，右控制
+        # 底部按钮区：只保留控制按钮
         bottom_hlayout = QHBoxLayout()
-        bottom_hlayout.addWidget(self.debug_btn)
         bottom_hlayout.addStretch(1)
-        bottom_hlayout.addLayout(control_btn_hlayout)
+        bottom_hlayout.addWidget(self.open_btn)
+        bottom_hlayout.addWidget(self.close_btn)
+        bottom_hlayout.addWidget(self.start_btn)
+        bottom_hlayout.addWidget(self.stop_btn)
         bottom_hlayout.setContentsMargins(10, 10, 10, 10)
         bottom_hlayout.setSpacing(32)
 
@@ -298,7 +322,9 @@ class MainWindow(QWidget):
         freq_row.addWidget(self.freq_label)
         freq_row.addWidget(self.half_freq_label)
         left_v.addLayout(freq_row)
+        left_v.addWidget(self.plot_widget)  # 恢复为最初的折线图布局
         left_v.addStretch(1)
+        left_v.addLayout(self.debug_btn_layout)
 
         # 右侧区域（串口信息区）
         right_v = QVBoxLayout()
@@ -502,6 +528,19 @@ class MainWindow(QWidget):
                 half_h = h // 2
                 self.half_temp_label.setText(f"减半温度: {half_t} ℃")
                 self.half_humi_label.setText(f"减半湿度: {half_h} %")
+                # 折线图数据更新
+                self.temp_data.append(t)
+                self.humi_data.append(h)
+                if len(self.temp_data) > self.data_len:
+                    self.temp_data = self.temp_data[-self.data_len:]
+                if len(self.humi_data) > self.data_len:
+                    self.humi_data = self.humi_data[-self.data_len:]
+                temp_y = self.temp_data[-10:]
+                humi_y = self.humi_data[-10:]
+                x = list(range(1, len(temp_y) + 1))
+                self.temp_curve.setData(x, temp_y)
+                self.humi_curve.setData(x, humi_y)
+                self.freq_curve.setData([], [])  # 清空频率曲线
                 
                 # 阈值判断
                 try:
@@ -552,6 +591,15 @@ class MainWindow(QWidget):
                 self.freq_label.setText(f"频率: {f} Hz")
                 half_f = f // 2
                 self.half_freq_label.setText(f"减半频率: {half_f} Hz")
+                # 折线图数据更新
+                self.freq_data.append(f)
+                if len(self.freq_data) > self.data_len:
+                    self.freq_data = self.freq_data[-self.data_len:]
+                freq_y = self.freq_data[-10:]
+                x = list(range(1, len(freq_y) + 1))
+                self.freq_curve.setData(x, freq_y)
+                self.temp_curve.setData([], [])  # 清空温度曲线
+                self.humi_curve.setData([], [])  # 清空湿度曲线
                 
                 # 阈值判断
                 try:
