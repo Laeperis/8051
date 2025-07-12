@@ -1,4 +1,4 @@
-C51 COMPILER V9.59.0.0   MAIN                                                              07/11/2025 21:36:36 PAGE 1   
+C51 COMPILER V9.59.0.0   MAIN                                                              07/12/2025 09:46:03 PAGE 1   
 
 
 C51 COMPILER V9.59.0.0, COMPILATION OF MODULE MAIN
@@ -26,8 +26,8 @@ line level    source
   16          volatile bit rx_flag = 0;
   17          // char debug[17]; // 全局变量（删除，调试用局部变量）
   18          
-  19          // 优化：用于接收上位机回发的数字，缩短为6字节
-  20          unsigned char xdata num_buf[12]; // 放到xdata区，减轻data压力
+  19          // 优化：用于接收上位机回发的数字，增加缓冲区大小以容纳校验和
+  20          unsigned char xdata num_buf[24]; // 放到xdata区，增加大小以容纳校验和
   21          unsigned char num_idx = 0;
   22          
   23          volatile unsigned char current_channel = 0; // 0=DHT11, 1=555频率
@@ -62,7 +62,7 @@ line level    source
   52          u8 IIC_GetAck(void) {
   53   1          u8 i=0; IIC_SDA=1; IIC_SCL=1;
   54   1          while(IIC_SDA) { i++; if(i>250) { IIC_SCL=0; return 1; } }
-C51 COMPILER V9.59.0.0   MAIN                                                              07/11/2025 21:36:36 PAGE 2   
+C51 COMPILER V9.59.0.0   MAIN                                                              07/12/2025 09:46:03 PAGE 2   
 
   55   1          IIC_SCL=0; return 0;
   56   1      }
@@ -126,7 +126,7 @@ line level    source
  114          void handle_half_freq(const char* str) {
  115   1          int f = 0;
  116   1          UART_SendStr("[DEBUG] RAW FREQ BUF: ");
-C51 COMPILER V9.59.0.0   MAIN                                                              07/11/2025 21:36:36 PAGE 3   
+C51 COMPILER V9.59.0.0   MAIN                                                              07/12/2025 09:46:03 PAGE 3   
 
  117   1          UART_SendStr(str);
  118   1          UART_SendStr("\r\n");
@@ -142,226 +142,274 @@ line level    source
  128   1          Delay100ms();
  129   1      }
  130          
- 131          void UART_Init() {
- 132   1          SCON = 0x50;      // 8位数据,可变波特率
- 133   1          TMOD |= 0x20;     // 定时器1，8位自动重装
- 134   1          TH1 = 0xFD;       // 9600波特率
- 135   1          TL1 = 0xFD;
- 136   1          TR1 = 1;
- 137   1          ES = 1;
- 138   1          EA = 1;
- 139   1      }
- 140          
- 141          void Timer0_Init() {
- 142   1          TMOD &= 0xF0;
- 143   1          TMOD |= 0x01; // T0方式1
- 144   1          TH0 = (65536 - 50000) / 256; // 50ms定时
- 145   1          TL0 = (65536 - 50000) % 256;
- 146   1          ET0 = 1;
- 147   1          TR0 = 1;
+ 131          // 新增：校验和计算函数
+ 132          unsigned int calculate_checksum(char *str) {
+ 133   1          unsigned int checksum = 0;
+ 134   1          while(*str) {
+ 135   2              checksum += *str++;
+ 136   2          }
+ 137   1          return checksum;
+ 138   1      }
+ 139          
+ 140          void UART_Init() {
+ 141   1          SCON = 0x50;      // 8位数据,可变波特率
+ 142   1          TMOD |= 0x20;     // 定时器1，8位自动重装
+ 143   1          TH1 = 0xFD;       // 9600波特率
+ 144   1          TL1 = 0xFD;
+ 145   1          TR1 = 1;
+ 146   1          ES = 1;
+ 147   1          EA = 1;
  148   1      }
  149          
- 150          void Timer1_Init() {
- 151   1          TMOD &= 0x0F;
- 152   1          TMOD |= 0x50; // T1方式1，计数器模式
- 153   1          TH1 = 0;
- 154   1          TL1 = 0;
- 155   1          TR1 = 1;
- 156   1      }
- 157          
- 158          void INT0_Init() {
- 159   1          IT0 = 1; // 下降沿触发
- 160   1      }
- 161          
- 162          void UART_SendStr(char *str) {
- 163   1          while(*str) {
- 164   2              SBUF = *str++;
- 165   2              while(!TI);
- 166   2              TI = 0;
- 167   2          }
- 168   1      }
- 169          
- 170          void UART_ISR() interrupt 4 {
- 171   1          if(RI) {
- 172   2              char ch = SBUF;
- 173   2              RI = 0;
- 174   2              // 接收一行，遇到回车/换行处理
- 175   2              if(num_idx < sizeof(num_buf) - 1 && ch != '\r' && ch != '\n') {
- 176   3                  num_buf[num_idx++] = ch;
- 177   3              }
- 178   2              if(ch == '\r' || ch == '\n') {
-C51 COMPILER V9.59.0.0   MAIN                                                              07/11/2025 21:36:36 PAGE 4   
+ 150          void Timer0_Init() {
+ 151   1          TMOD &= 0xF0;
+ 152   1          TMOD |= 0x01; // T0方式1
+ 153   1          TH0 = (65536 - 50000) / 256; // 50ms定时
+ 154   1          TL0 = (65536 - 50000) % 256;
+ 155   1          ET0 = 1;
+ 156   1          TR0 = 1;
+ 157   1      }
+ 158          
+ 159          void Timer1_Init() {
+ 160   1          TMOD &= 0x0F;
+ 161   1          TMOD |= 0x50; // T1方式1，计数器模式
+ 162   1          TH1 = 0;
+ 163   1          TL1 = 0;
+ 164   1          TR1 = 1;
+ 165   1      }
+ 166          
+ 167          void INT0_Init() {
+ 168   1          IT0 = 1; // 下降沿触发
+ 169   1      }
+ 170          
+ 171          void UART_SendStr(char *str) {
+ 172   1          while(*str) {
+ 173   2              SBUF = *str++;
+ 174   2              while(!TI);
+ 175   2              TI = 0;
+ 176   2          }
+ 177   1      }
+ 178          
+C51 COMPILER V9.59.0.0   MAIN                                                              07/12/2025 09:46:03 PAGE 4   
 
- 179   3                  if(num_idx > 0) {
- 180   4                      num_buf[num_idx] = '\0';
- 181   4                      // 判断是否为命令行
- 182   4                      if(strncmp((char*)num_buf, "CMD:", 4) == 0 && num_idx >= 5) {
- 183   5                          char cmd = num_buf[4];
- 184   5                          // 处理命令
- 185   5                          if(cmd == 'S') collect_flag = 1;
- 186   5                          if(cmd == 'E') collect_flag = 0;
- 187   5                          if(cmd == 'A') {
- 188   6                              current_channel = 0;
- 189   6                              freq_count = 0;
- 190   6                              freq_sample_flag = 0;
- 191   6                              LCD_ShowString(0,0,"                ");
- 192   6                              LCD_ShowString(1,0,"                ");
- 193   6                          }
- 194   5                          if(cmd == 'B') {
- 195   6                              current_channel = 1;
- 196   6                              freq_count = 0;
- 197   6                              t0_count = 0;
- 198   6                              freq_sample_flag = 0;
- 199   6                              LCD_ShowString(0,0,"                ");
- 200   6                              LCD_ShowString(1,0,"                ");
- 201   6                          }
- 202   5                          if(cmd == 'X'){
- 203   6                              LED1 = 0;
- 204   6                              UART_SendStr("TEMPER ALARM\r\n");
- 205   6                          }
- 206   5                          if(cmd == 'Y'){
- 207   6                              LED2 = 0;
- 208   6                              UART_SendStr("HUMI ALARM\r\n");
- 209   6                          }
- 210   5                          if(cmd == 'Z'){
- 211   6                              LED3 = 0;
- 212   6                              UART_SendStr("FREQ ALARM\r\n");
- 213   6                          }
- 214   5                          if(cmd == 'x'){
- 215   6                              LED1 = 1;
- 216   6                              UART_SendStr("TEMPER NORMAL\r\n");
- 217   6                          }
- 218   5                          if(cmd == 'y'){
- 219   6                              LED2 = 1;
- 220   6                              UART_SendStr("HUMI NORMAL\r\n");
- 221   6                          }
- 222   5                          if(cmd == 'z'){
- 223   6                              LED3 = 1;
- 224   6                              UART_SendStr("FREQ NORMAL\r\n");
- 225   6                          }
- 226   5                      } else {
- 227   5                          // 不是命令，按原有数据处理
- 228   5                          UART_SendStr("HALF VALUE: ");
- 229   5                          UART_SendStr((char*)num_buf);
- 230   5                          UART_SendStr("\r\n");
- 231   5                          if(current_channel == 0) {
- 232   6                              handle_half_value((char*)num_buf);
- 233   6                          } else if(current_channel == 1) {
- 234   6                              handle_half_freq((char*)num_buf);
- 235   6                          }
- 236   5                      }
- 237   4                      num_idx = 0;
- 238   4                  }
- 239   3              }
- 240   2          }
-C51 COMPILER V9.59.0.0   MAIN                                                              07/11/2025 21:36:36 PAGE 5   
+ 179          void UART_ISR() interrupt 4 {
+ 180   1          char ch;
+ 181   1          char *check_pos;
+ 182   1          unsigned int received_checksum, calculated_checksum;
+ 183   1          
+ 184   1          if(RI) {
+ 185   2              ch = SBUF;
+ 186   2              RI = 0;
+ 187   2              // 接收一行，遇到回车/换行处理
+ 188   2              if(num_idx < sizeof(num_buf) - 1 && ch != '\r' && ch != '\n') {
+ 189   3                  num_buf[num_idx++] = ch;
+ 190   3              }
+ 191   2              if(ch == '\r' || ch == '\n') {
+ 192   3                  if(num_idx > 0) {
+ 193   4                      num_buf[num_idx] = '\0';
+ 194   4                      // 判断是否为命令行
+ 195   4                      if(strncmp((char*)num_buf, "CMD:", 4) == 0 && num_idx >= 5) {
+ 196   5                          char cmd = num_buf[4];
+ 197   5                          // 处理命令
+ 198   5                          if(cmd == 'S') collect_flag = 1;
+ 199   5                          if(cmd == 'E') collect_flag = 0;
+ 200   5                          if(cmd == 'A') {
+ 201   6                              current_channel = 0;
+ 202   6                              freq_count = 0;
+ 203   6                              freq_sample_flag = 0;
+ 204   6                              LCD_ShowString(0,0,"                ");
+ 205   6                              LCD_ShowString(1,0,"                ");
+ 206   6                          }
+ 207   5                          if(cmd == 'B') {
+ 208   6                              current_channel = 1;
+ 209   6                              freq_count = 0;
+ 210   6                              t0_count = 0;
+ 211   6                              freq_sample_flag = 0;
+ 212   6                              LCD_ShowString(0,0,"                ");
+ 213   6                              LCD_ShowString(1,0,"                ");
+ 214   6                          }
+ 215   5                          if(cmd == 'X'){
+ 216   6                              LED1 = 0;
+ 217   6                              UART_SendStr("TEMPER ALARM\r\n");
+ 218   6                          }
+ 219   5                          if(cmd == 'Y'){
+ 220   6                              LED2 = 0;
+ 221   6                              UART_SendStr("HUMI ALARM\r\n");
+ 222   6                          }
+ 223   5                          if(cmd == 'Z'){
+ 224   6                              LED3 = 0;
+ 225   6                              UART_SendStr("FREQ ALARM\r\n");
+ 226   6                          }
+ 227   5                          if(cmd == 'x'){
+ 228   6                              LED1 = 1;
+ 229   6                              UART_SendStr("TEMPER NORMAL\r\n");
+ 230   6                          }
+ 231   5                          if(cmd == 'y'){
+ 232   6                              LED2 = 1;
+ 233   6                              UART_SendStr("HUMI NORMAL\r\n");
+ 234   6                          }
+ 235   5                          if(cmd == 'z'){
+ 236   6                              LED3 = 1;
+ 237   6                              UART_SendStr("FREQ NORMAL\r\n");
+ 238   6                          }
+ 239   5                      } else {
+ 240   5                          // 不是命令，检查是否包含校验和
+C51 COMPILER V9.59.0.0   MAIN                                                              07/12/2025 09:46:03 PAGE 5   
 
- 241   1      }
- 242          
- 243          void Timer0_ISR() interrupt 1 {
- 244   1          TH0 = (65536 - 50000) / 256;
- 245   1          TL0 = (65536 - 50000) % 256;
- 246   1          t0_count++;
- 247   1          if (t0_count >= 20) { // 20 * 50ms = 1000ms = 1s
- 248   2              t0_count = 0;
- 249   2              freq_sample_flag = 1; // 产生1s采样标志
- 250   2          }
- 251   1      }
- 252          
- 253          void INT0_ISR() interrupt 0 {
- 254   1          freq_count++;
- 255   1      }
- 256          
- 257          extern void Delay1000ms();
- 258          sbit FREQ_IN = P3^2;
- 259          
- 260          void main() {
- 261   1          // 简化局部变量，只保留必要的
- 262   1          unsigned char temp, humi;
- 263   1          char xdata buf[20]; // 放到xdata区
- 264   1      
- 265   1          UART_SendStr("[DEBUG] UART_Init\r\n");
- 266   1          UART_Init();
- 267   1          UART_SendStr("[DEBUG] LCD_Init\r\n");
- 268   1          LCD_Init();
- 269   1          UART_SendStr("[DEBUG] Timer0_Init\r\n");
- 270   1          Timer0_Init();
- 271   1          UART_SendStr("[DEBUG] INT0_Init\r\n");
- 272   1          INT0_Init();
- 273   1          EA = 1; // 总中断使能
- 274   1          UART_SendStr("[DEBUG] Init Done\r\n");
- 275   1          LCD_ShowString(0,0,"WAIT CMD      ");
- 276   1          while(1) {
- 277   2              // --- 硬件状态控制器 ---
- 278   2              // 根据软件状态，实时决定是否开启外部中断进行频率计数
- 279   2              if (collect_flag && current_channel == 1) {
- 280   3                  EX0 = 1; // 启动采集且在频率通道时，使能外部中断
- 281   3              } else {
- 282   3                  EX0 = 0; // 其他所有情况（停止或在温湿度通道），都关闭外部中断
- 283   3              }
- 284   2      
- 285   2              if(collect_flag) {
- 286   3                  if(current_channel == 1) { // 555频率测量 (硬件中断计数法)
- 287   4                      // 轮询代码已删除，计数在后台由INT0_ISR自动完成
- 288   4                      if(freq_sample_flag) {
- 289   5                         
- 290   5                          freq_sample_flag = 0; // 清除标志，为下个周期做准备
- 291   5      
- 292   5                          EA = 0; // 关总中断，保证原子操作
- 293   5                          freq_value = freq_count; // 1s内的计数值就是频率
- 294   5                          freq_count = 0;          // 将脉冲计数器清零，开始新的计数周期
- 295   5                          EA = 1; // 开总中断
- 296   5      
- 297   5                          LCD_ShowString(0,0,"FREQ:       Hz");
- 298   5                          LCD_ShowNum(0,6,freq_value,5);
- 299   5                          sprintf(buf, "FREQ:%u\r\n", freq_value);
- 300   5                          UART_SendStr(buf);
- 301   5                      }
- 302   4                  } else if(current_channel == 0) { // DHT11温湿度
-C51 COMPILER V9.59.0.0   MAIN                                                              07/11/2025 21:36:36 PAGE 6   
+ 241   5                          check_pos = strstr((char*)num_buf, " CHECKSUM:");
+ 242   5                          if(check_pos) {
+ 243   6                              // 包含校验和的数据
+ 244   6                              *check_pos = '\0'; // 分离数据和校验和
+ 245   6                              received_checksum = atoi(check_pos + 10); // 跳过" CHECKSUM:"
+ 246   6                              calculated_checksum = calculate_checksum((char*)num_buf);
+ 247   6                              
+ 248   6                              if(received_checksum == calculated_checksum) {
+ 249   7                                  // 校验和正确，处理数据
+ 250   7                                  UART_SendStr("[DEBUG] CHECKSUM OK\r\n");
+ 251   7                                  UART_SendStr("HALF VALUE: ");
+ 252   7                                  UART_SendStr((char*)num_buf);
+ 253   7                                  UART_SendStr("\r\n");
+ 254   7                                  if(current_channel == 0) {
+ 255   8                                      handle_half_value((char*)num_buf);
+ 256   8                                  } else if(current_channel == 1) {
+ 257   8                                      handle_half_freq((char*)num_buf);
+ 258   8                                  }
+ 259   7                              } else {
+ 260   7                                  // 校验和错误
+ 261   7                                  UART_SendStr("[DEBUG] CHECKSUM ERROR\r\n");
+ 262   7                              }
+ 263   6                          } else {
+ 264   6                              // 不包含校验和的数据（兼容旧格式）
+ 265   6                              UART_SendStr("HALF VALUE: ");
+ 266   6                              UART_SendStr((char*)num_buf);
+ 267   6                              UART_SendStr("\r\n");
+ 268   6                              if(current_channel == 0) {
+ 269   7                                  handle_half_value((char*)num_buf);
+ 270   7                              } else if(current_channel == 1) {
+ 271   7                                  handle_half_freq((char*)num_buf);
+ 272   7                              }
+ 273   6                          }
+ 274   5                      }
+ 275   4                      num_idx = 0;
+ 276   4                  }
+ 277   3              }
+ 278   2          }
+ 279   1      }
+ 280          
+ 281          void Timer0_ISR() interrupt 1 {
+ 282   1          TH0 = (65536 - 50000) / 256;
+ 283   1          TL0 = (65536 - 50000) % 256;
+ 284   1          t0_count++;
+ 285   1          if (t0_count >= 20) { // 20 * 50ms = 1000ms = 1s
+ 286   2              t0_count = 0;
+ 287   2              freq_sample_flag = 1; // 产生1s采样标志
+ 288   2          }
+ 289   1      }
+ 290          
+ 291          void INT0_ISR() interrupt 0 {
+ 292   1          freq_count++;
+ 293   1      }
+ 294          
+ 295          extern void Delay1000ms();
+ 296          sbit FREQ_IN = P3^2;
+ 297          
+ 298          void main() {
+ 299   1          // 简化局部变量，只保留必要的
+ 300   1          unsigned char temp, humi;
+ 301   1          char xdata buf[20]; // 放到xdata区
+ 302   1          unsigned int checksum; // 新增：校验和变量声明
+C51 COMPILER V9.59.0.0   MAIN                                                              07/12/2025 09:46:03 PAGE 6   
 
- 303   4                      // freq_count = 0; // 确保在DHT11模式下，频率计数器是清零的
- 304   4                      if (freq_sample_flag) { // 复用1秒的定时器门控
- 305   5                          
- 306   5                          freq_sample_flag = 0;
- 307   5                          
- 308   5                          EA = 0; // 关闭总中断
- 309   5                          if(DHT11_Read(&temp, &humi) == 0) {
- 310   6                              EA = 1; // 恢复总中断
- 311   6                              LCD_ShowString(0,0,"Temp:    C");
- 312   6                              LCD_ShowString(1,0,"Humi:    %");
- 313   6                              LCD_ShowNum(0,6,temp,2);
- 314   6                              LCD_ShowNum(1,6,humi,2);
- 315   6                              sprintf(buf, "T:%u H:%u\r\n", (unsigned int)temp, (unsigned int)humi);
- 316   6                              UART_SendStr(buf);
- 317   6                          } else {
- 318   6                              EA = 1; // 恢复总中断
- 319   6                              UART_SendStr("[DEBUG] DHT11 FAIL\r\n");
- 320   6                              LCD_ShowString(0,0,"Temp:    C");
- 321   6                              LCD_ShowString(1,0,"Humi:    %");
- 322   6                              LCD_ShowNum(0,6,99,2);
- 323   6                              LCD_ShowNum(1,6,99,2);
- 324   6                              UART_SendStr("DHT11 FAIL\r\n");
- 325   6                          }
- 326   5                      }
- 327   4                  }
- 328   3              } else {
- 329   3                  freq_count = 0; // 停止采集时，也清零频率计数器
- 330   3                  LCD_ShowString(0,0,"WAIT CMD      ");
- 331   3                  LCD_ShowString(1,0,"              ");
- 332   3                  Delay1000ms();
- 333   3              }
- 334   2              Delay100ms(); // 新增：每次主循环末尾短暂延时，降低CPU占用
- 335   2          }
- 336   1      } 
+ 303   1      
+ 304   1          UART_SendStr("[DEBUG] UART_Init\r\n");
+ 305   1          UART_Init();
+ 306   1          UART_SendStr("[DEBUG] LCD_Init\r\n");
+ 307   1          LCD_Init();
+ 308   1          UART_SendStr("[DEBUG] Timer0_Init\r\n");
+ 309   1          Timer0_Init();
+ 310   1          UART_SendStr("[DEBUG] INT0_Init\r\n");
+ 311   1          INT0_Init();
+ 312   1          EA = 1; // 总中断使能
+ 313   1          UART_SendStr("[DEBUG] Init Done\r\n");
+ 314   1          LCD_ShowString(0,0,"WAIT CMD      ");
+ 315   1          while(1) {
+ 316   2              // --- 硬件状态控制器 ---
+ 317   2              // 根据软件状态，实时决定是否开启外部中断进行频率计数
+ 318   2              if (collect_flag && current_channel == 1) {
+ 319   3                  EX0 = 1; // 启动采集且在频率通道时，使能外部中断
+ 320   3              } else {
+ 321   3                  EX0 = 0; // 其他所有情况（停止或在温湿度通道），都关闭外部中断
+ 322   3              }
+ 323   2      
+ 324   2              if(collect_flag) {
+ 325   3                  if(current_channel == 1) { // 555频率测量 (硬件中断计数法)
+ 326   4                      // 轮询代码已删除，计数在后台由INT0_ISR自动完成
+ 327   4                      if(freq_sample_flag) {
+ 328   5                         
+ 329   5                          freq_sample_flag = 0; // 清除标志，为下个周期做准备
+ 330   5      
+ 331   5                          EA = 0; // 关总中断，保证原子操作
+ 332   5                          freq_value = freq_count; // 1s内的计数值就是频率
+ 333   5                          freq_count = 0;          // 将脉冲计数器清零，开始新的计数周期
+ 334   5                          EA = 1; // 开总中断
+ 335   5      
+ 336   5                          LCD_ShowString(0,0,"FREQ:       Hz");
+ 337   5                          LCD_ShowNum(0,6,freq_value,5);
+ 338   5                          // 修改：添加校验和
+ 339   5                          sprintf(buf, "FREQ:%u", freq_value);
+ 340   5                          checksum = calculate_checksum(buf);
+ 341   5                          sprintf(buf, "FREQ:%u CHECKSUM:%u\r\n", freq_value, checksum);
+ 342   5                          UART_SendStr(buf);
+ 343   5                      }
+ 344   4                  } else if(current_channel == 0) { // DHT11温湿度
+ 345   4                      // freq_count = 0; // 确保在DHT11模式下，频率计数器是清零的
+ 346   4                      if (freq_sample_flag) { // 复用1秒的定时器门控
+ 347   5                          
+ 348   5                          freq_sample_flag = 0;
+ 349   5                          
+ 350   5                          EA = 0; // 关闭总中断
+ 351   5                          if(DHT11_Read(&temp, &humi) == 0) {
+ 352   6                              EA = 1; // 恢复总中断
+ 353   6                              LCD_ShowString(0,0,"Temp:    C");
+ 354   6                              LCD_ShowString(1,0,"Humi:    %");
+ 355   6                              LCD_ShowNum(0,6,temp,2);
+ 356   6                              LCD_ShowNum(1,6,humi,2);
+ 357   6                              // 修改：添加校验和
+ 358   6                              sprintf(buf, "T:%u H:%u", (unsigned int)temp, (unsigned int)humi);
+ 359   6                              checksum = calculate_checksum(buf);
+ 360   6                              sprintf(buf, "T:%u H:%u CHECKSUM:%u\r\n", (unsigned int)temp, (unsigned int)humi, 
+             -checksum);
+ 361   6                              UART_SendStr(buf);
+ 362   6                          } else {
+ 363   6                              EA = 1; // 恢复总中断
+C51 COMPILER V9.59.0.0   MAIN                                                              07/12/2025 09:46:03 PAGE 7   
+
+ 364   6                              UART_SendStr("[DEBUG] DHT11 FAIL\r\n");
+ 365   6                              LCD_ShowString(0,0,"Temp:    C");
+ 366   6                              LCD_ShowString(1,0,"Humi:    %");
+ 367   6                              LCD_ShowNum(0,6,99,2);
+ 368   6                              LCD_ShowNum(1,6,99,2);
+ 369   6                              UART_SendStr("DHT11 FAIL\r\n");
+ 370   6                          }
+ 371   5                      }
+ 372   4                  }
+ 373   3              } else {
+ 374   3                  freq_count = 0; // 停止采集时，也清零频率计数器
+ 375   3                  LCD_ShowString(0,0,"WAIT CMD      ");
+ 376   3                  LCD_ShowString(1,0,"              ");
+ 377   3                  Delay1000ms();
+ 378   3              }
+ 379   2              Delay100ms(); // 新增：每次主循环末尾短暂延时，降低CPU占用
+ 380   2          }
+ 381   1      } 
 
 
 MODULE INFORMATION:   STATIC OVERLAYABLE
-   CODE SIZE        =   1474    ----
-   CONSTANT SIZE    =    471    ----
-   XDATA SIZE       =     12      44
+   CODE SIZE        =   1722    ----
+   CONSTANT SIZE    =    571    ----
+   XDATA SIZE       =     24      44
    PDATA SIZE       =   ----    ----
-   DATA SIZE        =      8      23
+   DATA SIZE        =      8      29
    IDATA SIZE       =   ----    ----
    BIT SIZE         =      4    ----
 END OF MODULE INFORMATION.
