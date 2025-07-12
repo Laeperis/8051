@@ -11,6 +11,9 @@ from PyQt5.QtGui import QPalette, QBrush, QPixmap, QPainter, QColor, QImage
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMenu
+import PyQt5.QtCore as QtCore
+import pyqtgraph as pg  
+from PyQt5.QtWidgets import QDial
 
 class SerialThread(QThread):
     data_received = pyqtSignal(str)
@@ -102,6 +105,23 @@ class MainWindow(QWidget):
         self.half_freq_label = QLabel("减半频率: -- Hz")
         self.text_area = QTextEdit()
         self.text_area.setReadOnly(True)
+
+        # 折线图相关
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setBackground(QColor(255, 255, 255, 220))  # 半透明白色背景
+        self.plot_widget.showGrid(x=True, y=True)
+        self.plot_widget.setLabel('left', '数值')
+        self.plot_widget.setLabel('bottom', '采样点')
+        plot_item = self.plot_widget.getPlotItem()
+        if plot_item is not None:
+            plot_item.getAxis('bottom').setTicks([[(i, str(i+1)) for i in range(10)]])
+        self.temp_curve = self.plot_widget.plot(pen=pg.mkPen('r', width=2), name='温度')
+        self.humi_curve = self.plot_widget.plot(pen=pg.mkPen('b', width=2), name='湿度')
+        self.freq_curve = self.plot_widget.plot(pen=pg.mkPen('g', width=2), name='频率')
+        self.data_len = 100
+        self.temp_data = []
+        self.humi_data = []
+        self.freq_data = []
 
         # 阈值标题标签和单位/分隔符，必须在布局前定义
         self.temp_thresh_title = QLabel("温度范围:")
@@ -244,6 +264,8 @@ class MainWindow(QWidget):
         h0.addWidget(self.channel_label)
         h0.addWidget(self.channel_combo)
         h0.addStretch(1)
+        for btn in [self.debug_btn]:
+            h0.addWidget(btn)
 
         h1 = QHBoxLayout()
         h1.addWidget(self.port_label)
@@ -259,11 +281,13 @@ class MainWindow(QWidget):
         control_btn_hlayout.addWidget(self.stop_btn)
         control_btn_hlayout.setSpacing(16)
 
-        # 底部按钮区：左调试，右控制
+        # 底部按钮区：只保留控制按钮
         bottom_hlayout = QHBoxLayout()
-        bottom_hlayout.addWidget(self.debug_btn)
         bottom_hlayout.addStretch(1)
-        bottom_hlayout.addLayout(control_btn_hlayout)
+        bottom_hlayout.addWidget(self.open_btn)
+        bottom_hlayout.addWidget(self.close_btn)
+        bottom_hlayout.addWidget(self.start_btn)
+        bottom_hlayout.addWidget(self.stop_btn)
         bottom_hlayout.setContentsMargins(10, 10, 10, 10)
         bottom_hlayout.setSpacing(32)
 
@@ -298,7 +322,9 @@ class MainWindow(QWidget):
         freq_row.addWidget(self.freq_label)
         freq_row.addWidget(self.half_freq_label)
         left_v.addLayout(freq_row)
+        left_v.addWidget(self.plot_widget)  # 恢复为最初的折线图布局
         left_v.addStretch(1)
+        left_v.addLayout(self.debug_btn_layout)
 
         # 右侧区域（串口信息区）
         right_v = QVBoxLayout()
@@ -487,12 +513,100 @@ class MainWindow(QWidget):
                 if w is not None:
                     w.setVisible(True)
 
+    def calculate_checksum(self, data_str):
+        """计算字符串的校验和"""
+        checksum = 0
+        for char in data_str:
+            checksum += ord(char)
+        return checksum  # 移除 % 256，与下位机保持一致
+
+    def validate_checksum(self, line):
+        """校验和验证"""
+        if "CHECKSUM:" not in line:
+            return False, "缺少校验和"
+        
+        # 分离数据和校验和
+        parts = line.split(" CHECKSUM:")
+        if len(parts) != 2:
+            return False, "校验和格式错误"
+        
+        data_part = parts[0]
+        try:
+            received_checksum = int(parts[1])
+        except ValueError:
+            return False, "校验和数值格式错误"
+        
+        # 计算校验和
+        calculated_checksum = self.calculate_checksum(data_part)
+        
+        if received_checksum != calculated_checksum:
+            return False, f"校验和不匹配: 接收={received_checksum}, 计算={calculated_checksum}"
+        
+        return True, f"校验和正确: {calculated_checksum}"
+
+    def validate_data_format(self, data_part):
+        """数据格式和范围校验（不包含校验和）"""
+        try:
+            if self.current_channel == 0:
+                # 温湿度通道校验
+                if not re.match(r"T:\d+\s+H:\d+", data_part):
+                    return False, "温湿度数据格式错误"
+                t, h = map(int, re.findall(r"\d+", data_part))
+                if not (0 <= t <= 100):
+                    return False, f"温度数值超出范围: {t}℃"
+                if not (0 <= h <= 100):
+                    return False, f"湿度数值超出范围: {h}%"
+                return True, f"温湿度数据有效: T={t}℃, H={h}%"
+            else:
+                # 频率通道校验
+                if not re.match(r"FREQ:\d+", data_part):
+                    return False, "频率数据格式错误"
+                match = re.search(r"\d+", data_part)
+                if not match:
+                    return False, "频率数值提取失败"
+                f = int(match.group())
+                if not (0 <= f <= 10000):
+                    return False, f"频率数值超出范围: {f}Hz"
+                return True, f"频率数据有效: {f}Hz"
+        except Exception as e:
+            return False, f"数据解析异常: {str(e)}"
+
+    def validate_data_with_checksum(self, line):
+        """带校验和的完整数据校验"""
+        # 1. 校验和验证
+        checksum_valid, checksum_msg = self.validate_checksum(line)
+        if not checksum_valid:
+            return False, checksum_msg
+        
+        # 2. 数据格式和范围校验
+        data_part = line.split(" CHECKSUM:")[0]
+        format_valid, format_msg = self.validate_data_format(data_part)
+        if not format_valid:
+            return False, format_msg
+        
+        return True, f"{format_msg} | {checksum_msg}"
+
     def on_data_received(self, line):
         self.text_area.append(line)
-        print(f"原始数据: {line}")
+        
+        # 只处理包含校验和的数据，忽略调试信息
+        if "CHECKSUM:" not in line:
+            return
+        
+        # 数据校验（包含校验和）
+        is_valid, message = self.validate_data_with_checksum(line)
+        if not is_valid:
+            self.text_area.append(f"❌ 数据校验失败: {message}")
+            return
+        else:
+            self.text_area.append(f"✅ {message}")
+        
+        # 提取数据部分（不含校验和）
+        data_part = line.split(" CHECKSUM:")[0]
+        
         if self.current_channel == 0:
             # 解析温湿度
-            match = re.search(r"T:(\d+)\s+H:(\d+)", line)
+            match = re.search(r"T:(\d+)\s+H:(\d+)", data_part)
             if match:
                 t = int(match.group(1))
                 h = int(match.group(2))
@@ -502,6 +616,19 @@ class MainWindow(QWidget):
                 half_h = h // 2
                 self.half_temp_label.setText(f"减半温度: {half_t} ℃")
                 self.half_humi_label.setText(f"减半湿度: {half_h} %")
+                # 折线图数据更新
+                self.temp_data.append(t)
+                self.humi_data.append(h)
+                if len(self.temp_data) > self.data_len:
+                    self.temp_data = self.temp_data[-self.data_len:]
+                if len(self.humi_data) > self.data_len:
+                    self.humi_data = self.humi_data[-self.data_len:]
+                temp_y = self.temp_data[-10:]
+                humi_y = self.humi_data[-10:]
+                x = list(range(1, len(temp_y) + 1))
+                self.temp_curve.setData(x, temp_y)
+                self.humi_curve.setData(x, humi_y)
+                self.freq_curve.setData([], [])  # 清空频率曲线
                 
                 # 阈值判断
                 try:
@@ -542,16 +669,27 @@ class MainWindow(QWidget):
                                 self.text_area.append("湿度恢复正常，已发送'y'")
                                 self.humi_alarm_on = False
                     else:
-                        # 不需要报警时，回发减半数据
-                        self.ser.write(f"{half_t} {half_h}\r\n".encode())
+                        # 不需要报警时，回发减半数据（带校验和）
+                        half_data = f"{half_t} {half_h}"
+                        checksum = self.calculate_checksum(half_data)
+                        self.ser.write(f"{half_data} CHECKSUM:{checksum}\r\n".encode())
         else:
             # 解析频率
-            match = re.search(r"FREQ:(\d+)", line)
+            match = re.search(r"FREQ:(\d+)", data_part)
             if match:
                 f = int(match.group(1))
                 self.freq_label.setText(f"频率: {f} Hz")
                 half_f = f // 2
                 self.half_freq_label.setText(f"减半频率: {half_f} Hz")
+                # 折线图数据更新
+                self.freq_data.append(f)
+                if len(self.freq_data) > self.data_len:
+                    self.freq_data = self.freq_data[-self.data_len:]
+                freq_y = self.freq_data[-10:]
+                x = list(range(1, len(freq_y) + 1))
+                self.freq_curve.setData(x, freq_y)
+                self.temp_curve.setData([], [])  # 清空温度曲线
+                self.humi_curve.setData([], [])  # 清空湿度曲线
                 
                 # 阈值判断
                 try:
@@ -578,8 +716,10 @@ class MainWindow(QWidget):
                                 self.text_area.append("频率恢复正常，已发送'z'")
                                 self.freq_alarm_on = False
                     else:
-                        # 不需要报警时，回发减半数据
-                        self.ser.write(f"{half_f}\r\n".encode())
+                        # 不需要报警时，回发减半数据（带校验和）
+                        half_data = f"{half_f}"
+                        checksum = self.calculate_checksum(half_data)
+                        self.ser.write(f"{half_data} CHECKSUM:{checksum}\r\n".encode())
 
     def send_debug_signal(self, sig):
         if self.ser and self.ser.is_open:
