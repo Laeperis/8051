@@ -513,12 +513,100 @@ class MainWindow(QWidget):
                 if w is not None:
                     w.setVisible(True)
 
+    def calculate_checksum(self, data_str):
+        """计算字符串的校验和"""
+        checksum = 0
+        for char in data_str:
+            checksum += ord(char)
+        return checksum  # 移除 % 256，与下位机保持一致
+
+    def validate_checksum(self, line):
+        """校验和验证"""
+        if "CHECKSUM:" not in line:
+            return False, "缺少校验和"
+        
+        # 分离数据和校验和
+        parts = line.split(" CHECKSUM:")
+        if len(parts) != 2:
+            return False, "校验和格式错误"
+        
+        data_part = parts[0]
+        try:
+            received_checksum = int(parts[1])
+        except ValueError:
+            return False, "校验和数值格式错误"
+        
+        # 计算校验和
+        calculated_checksum = self.calculate_checksum(data_part)
+        
+        if received_checksum != calculated_checksum:
+            return False, f"校验和不匹配: 接收={received_checksum}, 计算={calculated_checksum}"
+        
+        return True, f"校验和正确: {calculated_checksum}"
+
+    def validate_data_format(self, data_part):
+        """数据格式和范围校验（不包含校验和）"""
+        try:
+            if self.current_channel == 0:
+                # 温湿度通道校验
+                if not re.match(r"T:\d+\s+H:\d+", data_part):
+                    return False, "温湿度数据格式错误"
+                t, h = map(int, re.findall(r"\d+", data_part))
+                if not (0 <= t <= 100):
+                    return False, f"温度数值超出范围: {t}℃"
+                if not (0 <= h <= 100):
+                    return False, f"湿度数值超出范围: {h}%"
+                return True, f"温湿度数据有效: T={t}℃, H={h}%"
+            else:
+                # 频率通道校验
+                if not re.match(r"FREQ:\d+", data_part):
+                    return False, "频率数据格式错误"
+                match = re.search(r"\d+", data_part)
+                if not match:
+                    return False, "频率数值提取失败"
+                f = int(match.group())
+                if not (0 <= f <= 10000):
+                    return False, f"频率数值超出范围: {f}Hz"
+                return True, f"频率数据有效: {f}Hz"
+        except Exception as e:
+            return False, f"数据解析异常: {str(e)}"
+
+    def validate_data_with_checksum(self, line):
+        """带校验和的完整数据校验"""
+        # 1. 校验和验证
+        checksum_valid, checksum_msg = self.validate_checksum(line)
+        if not checksum_valid:
+            return False, checksum_msg
+        
+        # 2. 数据格式和范围校验
+        data_part = line.split(" CHECKSUM:")[0]
+        format_valid, format_msg = self.validate_data_format(data_part)
+        if not format_valid:
+            return False, format_msg
+        
+        return True, f"{format_msg} | {checksum_msg}"
+
     def on_data_received(self, line):
         self.text_area.append(line)
-        print(f"原始数据: {line}")
+        
+        # 只处理包含校验和的数据，忽略调试信息
+        if "CHECKSUM:" not in line:
+            return
+        
+        # 数据校验（包含校验和）
+        is_valid, message = self.validate_data_with_checksum(line)
+        if not is_valid:
+            self.text_area.append(f"❌ 数据校验失败: {message}")
+            return
+        else:
+            self.text_area.append(f"✅ {message}")
+        
+        # 提取数据部分（不含校验和）
+        data_part = line.split(" CHECKSUM:")[0]
+        
         if self.current_channel == 0:
             # 解析温湿度
-            match = re.search(r"T:(\d+)\s+H:(\d+)", line)
+            match = re.search(r"T:(\d+)\s+H:(\d+)", data_part)
             if match:
                 t = int(match.group(1))
                 h = int(match.group(2))
@@ -581,11 +669,13 @@ class MainWindow(QWidget):
                                 self.text_area.append("湿度恢复正常，已发送'y'")
                                 self.humi_alarm_on = False
                     else:
-                        # 不需要报警时，回发减半数据
-                        self.ser.write(f"{half_t} {half_h}\r\n".encode())
+                        # 不需要报警时，回发减半数据（带校验和）
+                        half_data = f"{half_t} {half_h}"
+                        checksum = self.calculate_checksum(half_data)
+                        self.ser.write(f"{half_data} CHECKSUM:{checksum}\r\n".encode())
         else:
             # 解析频率
-            match = re.search(r"FREQ:(\d+)", line)
+            match = re.search(r"FREQ:(\d+)", data_part)
             if match:
                 f = int(match.group(1))
                 self.freq_label.setText(f"频率: {f} Hz")
@@ -626,8 +716,10 @@ class MainWindow(QWidget):
                                 self.text_area.append("频率恢复正常，已发送'z'")
                                 self.freq_alarm_on = False
                     else:
-                        # 不需要报警时，回发减半数据
-                        self.ser.write(f"{half_f}\r\n".encode())
+                        # 不需要报警时，回发减半数据（带校验和）
+                        half_data = f"{half_f}"
+                        checksum = self.calculate_checksum(half_data)
+                        self.ser.write(f"{half_data} CHECKSUM:{checksum}\r\n".encode())
 
     def send_debug_signal(self, sig):
         if self.ser and self.ser.is_open:
