@@ -2,11 +2,14 @@ import sys
 import serial
 import serial.tools.list_ports
 import re
+import requests
+import json
+import time
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QComboBox, QTextEdit, QMessageBox, QLineEdit, QFormLayout, QSlider
 )
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QPalette, QBrush, QPixmap, QPainter, QColor, QImage
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
 from PyQt5.QtCore import Qt
@@ -14,6 +17,8 @@ from PyQt5.QtWidgets import QMenu
 import PyQt5.QtCore as QtCore
 import pyqtgraph as pg  
 from PyQt5.QtWidgets import QDial
+
+
 
 class SerialThread(QThread):
     data_received = pyqtSignal(str)
@@ -37,6 +42,50 @@ class SerialThread(QThread):
         self.running = False
         self.quit()
         self.wait()
+class NetworkThread(QThread):
+    """
+    网络线程，负责发送网络数据
+    """
+    send_log = pyqtSignal(str)#用于向UI发送日志
+    def __init__(self,url):
+        super().__init__()
+        self.url = url
+        self.running = True
+        self.data_to_send = None #存储待发送的数据
+        
+    def run(self):
+        while self.running:
+            if self.data_to_send:
+                try:
+                    # 使用HTTP POST请求发送数据
+                    headers = {'Content-Type': 'application/json'}
+                    response = requests.post(self.url, data=self.data_to_send, headers=headers, timeout=5)
+                    
+                    if response.status_code == 200:
+                        self.send_log.emit(f"✅ 已发送到服务器: {self.data_to_send}")
+                    else:
+                        self.send_log.emit(f"⚠️ 服务器响应异常: {response.status_code}")
+                    
+                    self.data_to_send = None # 发送成功后清空
+                except requests.exceptions.ConnectionError:
+                    self.send_log.emit(f"❌ 连接服务器失败: {self.url}")
+                except requests.exceptions.Timeout:
+                    self.send_log.emit(f"❌ 请求超时: {self.url}")
+                except Exception as e:
+                    self.send_log.emit(f"❌ 发送到服务器失败: {e}")
+            self.msleep(1000) # 每秒尝试发送一次，避免频繁连接
+
+    def send_data(self, data):
+        """
+        设置要发送的数据。
+        """
+        self.data_to_send = data
+
+    def stop(self):
+        self.running = False
+        self.quit()
+        self.wait()
+            
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -52,8 +101,11 @@ class MainWindow(QWidget):
         self.setWindowTitle("温湿度/频率监控上位机")
         self.ser = None
         self.serial_thread = None
+        self.network_thread = None #新增网络线程
         self.current_channel = 1 # 0=温湿度, 1=频率
 
+        # 网络配置 - 固定服务器地址
+        self.server_url = "http://data.cancanjiao.xyz/data"  # 固定服务器URL
         # 报警状态标志
         self.temp_alarm_on = False
         self.humi_alarm_on = False
@@ -95,6 +147,12 @@ class MainWindow(QWidget):
         self.stop_btn = QPushButton("停止采集")
         self.stop_btn.clicked.connect(self.stop_collect)
         self.stop_btn.setEnabled(False)
+        
+        # 网络发送控制按钮
+        self.network_send_btn = QPushButton("发送数据")
+        self.network_send_btn.clicked.connect(self.toggle_network_send)
+        self.network_send_btn.setEnabled(False)
+        self.network_sending = False
         
         # 数据显示
         self.temp_label = QLabel("温度: -- ℃")
@@ -230,7 +288,7 @@ class MainWindow(QWidget):
             border: 1px solid #ccc;
         }
         """
-        for btn in [self.open_btn, self.close_btn, self.refresh_btn, self.start_btn, self.stop_btn]:
+        for btn in [self.open_btn, self.close_btn, self.refresh_btn, self.start_btn, self.stop_btn, self.network_send_btn]:
             btn.setMinimumWidth(button_width)
             btn.setMinimumHeight(button_height)
             btn.setStyleSheet(button_style)
@@ -258,6 +316,8 @@ class MainWindow(QWidget):
         self.debug_btn_layout = QHBoxLayout()
         self.debug_btn_layout.addWidget(self.debug_btn)
         self.debug_btn_layout.addStretch(1)
+        
+
 
         # 分散对齐布局
         h0 = QHBoxLayout()
@@ -281,8 +341,9 @@ class MainWindow(QWidget):
         control_btn_hlayout.addWidget(self.stop_btn)
         control_btn_hlayout.setSpacing(16)
 
-        # 底部按钮区：只保留控制按钮
+        # 底部按钮区：控制按钮在右侧，网络发送按钮在左侧
         bottom_hlayout = QHBoxLayout()
+        bottom_hlayout.addWidget(self.network_send_btn)  # 网络发送按钮在左侧
         bottom_hlayout.addStretch(1)
         bottom_hlayout.addWidget(self.open_btn)
         bottom_hlayout.addWidget(self.close_btn)
@@ -325,6 +386,8 @@ class MainWindow(QWidget):
         left_v.addWidget(self.plot_widget)  # 恢复为最初的折线图布局
         left_v.addStretch(1)
         left_v.addLayout(self.debug_btn_layout)
+        
+
 
         # 右侧区域（串口信息区）
         right_v = QVBoxLayout()
@@ -423,6 +486,7 @@ class MainWindow(QWidget):
             self.open_btn.setEnabled(False)
             self.close_btn.setEnabled(True)
             self.start_btn.setEnabled(True)
+            self.network_send_btn.setEnabled(True)  # 启用网络发送按钮
             self.text_area.append("串口已打开")
             # 打开串口后立即同步通道
             self.send_channel_cmd()
@@ -434,10 +498,14 @@ class MainWindow(QWidget):
             self.serial_thread.stop()
         if self.ser and self.ser.is_open:
             self.ser.close()
+        # 停止网络发送
+        if self.network_sending:
+            self.stop_network_send()
         self.open_btn.setEnabled(True)
         self.close_btn.setEnabled(False)
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
+        self.network_send_btn.setEnabled(False)  # 禁用网络发送按钮
         self.channel_combo.setEnabled(True) # 解锁通道选择
         self.text_area.append("串口已关闭")
 
@@ -518,7 +586,7 @@ class MainWindow(QWidget):
         checksum = 0
         for char in data_str:
             checksum += ord(char)
-        return checksum  # 移除 % 256，与下位机保持一致
+        return checksum  
 
     def validate_checksum(self, line):
         """校验和验证"""
@@ -630,6 +698,18 @@ class MainWindow(QWidget):
                 self.humi_curve.setData(x, humi_y)
                 self.freq_curve.setData([], [])  # 清空频率曲线
                 
+                # 向服务器发送数据
+                if self.network_sending:
+                    server_data = {
+                        "type": "temperature_humidity",
+                        "temperature": t,
+                        "humidity": h,
+                        "half_temperature": half_t,
+                        "half_humidity": half_h,
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    self.send_data_to_server(json.dumps(server_data))
+                
                 # 阈值判断
                 try:
                     tmin = float(self.temp_min_edit.text())
@@ -691,6 +771,16 @@ class MainWindow(QWidget):
                 self.temp_curve.setData([], [])  # 清空温度曲线
                 self.humi_curve.setData([], [])  # 清空湿度曲线
                 
+                # 向服务器发送数据
+                if self.network_sending:
+                    server_data = {
+                        "type": "frequency",
+                        "frequency": f,
+                        "half_frequency": half_f,
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    self.send_data_to_server(json.dumps(server_data))
+                
                 # 阈值判断
                 try:
                     fmin = float(self.freq_min_edit.text())
@@ -721,6 +811,85 @@ class MainWindow(QWidget):
                         checksum = self.calculate_checksum(half_data)
                         self.ser.write(f"{half_data} CHECKSUM:{checksum}\r\n".encode())
 
+    def toggle_network_send(self):
+        """切换网络发送状态"""
+        self.text_area.append(f"🔍 点击发送数据按钮，当前状态: network_sending={self.network_sending}")
+        if not self.network_sending:
+            # 开始发送
+            self.text_area.append("🚀 开始网络发送...")
+            self.start_network_send()
+        else:
+            # 停止发送
+            self.text_area.append("⏹️ 停止网络发送...")
+            self.stop_network_send()
+    
+    def start_network_send(self):
+        """开始网络发送"""
+        self.text_area.append(f"🔧 创建网络线程，服务器URL: {self.server_url}")
+        if not self.network_thread:
+            self.network_thread = NetworkThread(self.server_url)
+            self.network_thread.send_log.connect(self.on_network_log)
+            self.network_thread.start()
+            self.text_area.append("✅ 网络线程已启动")
+        
+        self.network_sending = True
+        self.network_send_btn.setText("停止发送")
+        self.network_send_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255,100,100,180);
+                color: white;
+                border-radius: 6px;
+                border: 1px solid #bbb;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 6px 16px;
+                font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
+            }
+            QPushButton:hover {
+                background: rgba(255,120,120,220);
+                border: 1.5px solid #E74C3C;
+            }
+        """)
+        self.text_area.append("✅ 开始向服务器发送数据")
+    
+    def stop_network_send(self):
+        """停止网络发送"""
+        if self.network_thread:
+            self.network_thread.stop()
+            self.network_thread = None
+        
+        self.network_sending = False
+        self.network_send_btn.setText("发送数据")
+        self.network_send_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255,255,255,180);
+                color: #222;
+                border-radius: 6px;
+                border: 1px solid #bbb;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 6px 16px;
+                font-family: 'Microsoft YaHei', '微软雅黑', sans-serif;
+            }
+            QPushButton:hover {
+                background: rgba(255,255,255,220);
+                border: 1.5px solid #4A90E2;
+            }
+        """)
+        self.text_area.append("⏹️ 已停止向服务器发送数据")
+    
+    def on_network_log(self, message):
+        """处理网络线程的日志消息"""
+        self.text_area.append(message)
+    
+    def send_data_to_server(self, data):
+        """向服务器发送数据"""
+        if self.network_thread and self.network_sending:
+            self.text_area.append(f"📤 准备发送数据: {data[:100]}...")
+            self.network_thread.send_data(data)
+        else:
+            self.text_area.append(f"⚠️ 网络发送未启用: network_thread={self.network_thread is not None}, network_sending={self.network_sending}")
+
     def send_debug_signal(self, sig):
         if self.ser and self.ser.is_open:
             # 统一发送带 CMD: 前缀的命令
@@ -733,8 +902,13 @@ class MainWindow(QWidget):
             self.text_area.append(f"已发送调试信号: CMD:{sig_str}")
         else:
             QMessageBox.warning(self, "错误", "串口未打开，无法发送调试信号")
+    
+
 
     def closeEvent(self, event):
+        # 停止网络发送
+        if self.network_sending:
+            self.stop_network_send()
         self.close_serial()
         event.accept()
 
