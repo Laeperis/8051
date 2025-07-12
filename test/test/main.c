@@ -16,8 +16,8 @@ volatile char last_rx = 0;
 volatile bit rx_flag = 0;
 // char debug[17]; // 全局变量（删除，调试用局部变量）
 
-// 优化：用于接收上位机回发的数字，缩短为6字节
-unsigned char xdata num_buf[12]; // 放到xdata区，减轻data压力
+// 优化：用于接收上位机回发的数字，增加缓冲区大小以容纳校验和
+unsigned char xdata num_buf[24]; // 放到xdata区，增加大小以容纳校验和
 unsigned char num_idx = 0;
 
 volatile unsigned char current_channel = 0; // 0=DHT11, 1=555频率
@@ -128,6 +128,15 @@ void handle_half_freq(const char* str) {
     Delay100ms();
 }
 
+// 新增：校验和计算函数
+unsigned int calculate_checksum(char *str) {
+    unsigned int checksum = 0;
+    while(*str) {
+        checksum += *str++;
+    }
+    return checksum;
+}
+
 void UART_Init() {
     SCON = 0x50;      // 8位数据,可变波特率
     TMOD |= 0x20;     // 定时器1，8位自动重装
@@ -168,8 +177,12 @@ void UART_SendStr(char *str) {
 }
 
 void UART_ISR() interrupt 4 {
+    char ch;
+    char *check_pos;
+    unsigned int received_checksum, calculated_checksum;
+    
     if(RI) {
-        char ch = SBUF;
+        ch = SBUF;
         RI = 0;
         // 接收一行，遇到回车/换行处理
         if(num_idx < sizeof(num_buf) - 1 && ch != '\r' && ch != '\n') {
@@ -224,14 +237,39 @@ void UART_ISR() interrupt 4 {
                         UART_SendStr("FREQ NORMAL\r\n");
                     }
                 } else {
-                    // 不是命令，按原有数据处理
-                    UART_SendStr("HALF VALUE: ");
-                    UART_SendStr((char*)num_buf);
-                    UART_SendStr("\r\n");
-                    if(current_channel == 0) {
-                        handle_half_value((char*)num_buf);
-                    } else if(current_channel == 1) {
-                        handle_half_freq((char*)num_buf);
+                    // 不是命令，检查是否包含校验和
+                    check_pos = strstr((char*)num_buf, " CHECKSUM:");
+                    if(check_pos) {
+                        // 包含校验和的数据
+                        *check_pos = '\0'; // 分离数据和校验和
+                        received_checksum = atoi(check_pos + 10); // 跳过" CHECKSUM:"
+                        calculated_checksum = calculate_checksum((char*)num_buf);
+                        
+                        if(received_checksum == calculated_checksum) {
+                            // 校验和正确，处理数据
+                            UART_SendStr("[DEBUG] CHECKSUM OK\r\n");
+                            UART_SendStr("HALF VALUE: ");
+                            UART_SendStr((char*)num_buf);
+                            UART_SendStr("\r\n");
+                            if(current_channel == 0) {
+                                handle_half_value((char*)num_buf);
+                            } else if(current_channel == 1) {
+                                handle_half_freq((char*)num_buf);
+                            }
+                        } else {
+                            // 校验和错误
+                            UART_SendStr("[DEBUG] CHECKSUM ERROR\r\n");
+                        }
+                    } else {
+                        // 不包含校验和的数据（兼容旧格式）
+                        UART_SendStr("HALF VALUE: ");
+                        UART_SendStr((char*)num_buf);
+                        UART_SendStr("\r\n");
+                        if(current_channel == 0) {
+                            handle_half_value((char*)num_buf);
+                        } else if(current_channel == 1) {
+                            handle_half_freq((char*)num_buf);
+                        }
                     }
                 }
                 num_idx = 0;
@@ -261,6 +299,7 @@ void main() {
     // 简化局部变量，只保留必要的
     unsigned char temp, humi;
     char xdata buf[20]; // 放到xdata区
+    unsigned int checksum; // 新增：校验和变量声明
 
     UART_SendStr("[DEBUG] UART_Init\r\n");
     UART_Init();
@@ -296,7 +335,10 @@ void main() {
 
                     LCD_ShowString(0,0,"FREQ:       Hz");
                     LCD_ShowNum(0,6,freq_value,5);
-                    sprintf(buf, "FREQ:%u\r\n", freq_value);
+                    // 修改：添加校验和
+                    sprintf(buf, "FREQ:%u", freq_value);
+                    checksum = calculate_checksum(buf);
+                    sprintf(buf, "FREQ:%u CHECKSUM:%u\r\n", freq_value, checksum);
                     UART_SendStr(buf);
                 }
             } else if(current_channel == 0) { // DHT11温湿度
@@ -312,7 +354,10 @@ void main() {
                         LCD_ShowString(1,0,"Humi:    %");
                         LCD_ShowNum(0,6,temp,2);
                         LCD_ShowNum(1,6,humi,2);
-                        sprintf(buf, "T:%u H:%u\r\n", (unsigned int)temp, (unsigned int)humi);
+                        // 修改：添加校验和
+                        sprintf(buf, "T:%u H:%u", (unsigned int)temp, (unsigned int)humi);
+                        checksum = calculate_checksum(buf);
+                        sprintf(buf, "T:%u H:%u CHECKSUM:%u\r\n", (unsigned int)temp, (unsigned int)humi, checksum);
                         UART_SendStr(buf);
                     } else {
                         EA = 1; // 恢复总中断
