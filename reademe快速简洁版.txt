@@ -1,0 +1,27 @@
+1.运行环境：
+上位机：
+python：
+PyQt5==5.15.9
+pyqtgraph==0.13.3
+pyserial==3.5
+requests==2.31.0
+
+下位机：
+Proteus 8 Professional
+
+串口通信：
+通过Virtual Serial Port Driver 8.0配置虚拟串口com1，com2
+
+2.运行步骤：
+打开Virtual Serial Port Driver 8.0/vspdconfig.exe,配置虚拟端口com1，com2
+打开Proteus仿真文件（8051/8051/新工程.pdsprj）启动Proteus仿真
+运行上位机程序(8051/test/test/upper_com_qt.py)
+点击‘打开串口’
+点击‘开始采集’
+稍作等待即可观察实时数据与图表
+（停止采集才可切换采集通道）
+点击‘发送数据’
+稍作等待访问http：//data.cancanjiao.xyz即可查看远程监控端
+详细说明请查看README.md
+
+注意：proteus仿真运行速度慢，发送命令时可能无反应，可稍作等待重新发生命令。
