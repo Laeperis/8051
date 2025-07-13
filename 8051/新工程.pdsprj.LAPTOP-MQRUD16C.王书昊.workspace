@@ -4,7 +4,7 @@
   <PLACEMENT>2c00000002000000030000000083ffff0083ffffffffffffffffffff00000000120000004a04000048050000</PLACEMENT>
   <WINDOW type="default" module="ISIS">
    <editor metric="0" gridmajor="2540000" mode="00000000" zoom="-1" scale="162" flipped="0" gridminor="254000" gridmode="32" snapidx="2" snap="254000" xcursor="0" orgmode="0" snaprange="127000">
-    <world y1="-8890000" x1="-12700000" y2="8890000" x2="12700000"/>
+    <world y1="-12700000" x1="-19050000" y2="12700000" x2="19050000"/>
     <centre x="-7839" y="7839"/>
     <origin x="0" y="0"/>
    </editor>
@@ -19,23 +19,23 @@
  </MODULE>
  <MODULE name="ISIS">
   <editor metric="0" gridmajor="2540000" mode="00000000" zoom="-1" scale="162" flipped="0" gridminor="254000" gridmode="32" snapidx="2" snap="254000" xcursor="0" orgmode="0" snaprange="127000">
-   <world y1="-8890000" x1="-12700000" y2="8890000" x2="12700000"/>
+   <world y1="-12700000" x1="-19050000" y2="12700000" x2="19050000"/>
    <centre x="-7839" y="7839"/>
    <origin x="0" y="0"/>
   </editor>
  </MODULE>
  <MODULE name="VSMDEBUG">
   <PWI>
-   <POPUP w="800" x="1520" flags="00000003" y="1035" h="200" pid="0" iid="-1">
+   <POPUP w="800" x="1656" flags="00000002" y="265" h="200" pid="0" iid="-1">
     <PROPERTIES>
-     <ITEM name="Message Column Width">550</ITEM>
+     <ITEM name="Message Column Width">-150</ITEM>
      <ITEM name="ShowGrid">No</ITEM>
      <ITEM name="Source Column Width">100</ITEM>
      <ITEM name="Time Column Width">120</ITEM>
      <ITEM name="Version">100</ITEM>
     </PROPERTIES>
    </POPUP>
-   <POPUP w="350" x="77" flags="00000032" y="210" h="200" pid="1" iid="-1">
+   <POPUP w="350" x="661" flags="00000032" y="260" h="200" pid="1" iid="-1">
     <PROPERTIES>
      <ITEM name="Address Column Width">100</ITEM>
      <ITEM name="AutoResize">No</ITEM>
@@ -50,23 +50,23 @@
      <ITEM name="Type Column Width">100</ITEM>
      <ITEM name="Value Column Width">100</ITEM>
      <ITEM name="Version">100</ITEM>
-     <ITEM name="Watch Expression Column Width">100</ITEM>
+     <ITEM name="Watch Expression Column Width">-152</ITEM>
      <ITEM name="nItems">0</ITEM>
     </PROPERTIES>
    </POPUP>
-   <POPUP w="574" x="97" flags="00000000" y="230" h="360" pid="0" iid="15">
+   <POPUP w="574" x="1986" flags="00000001" y="637" h="360" pid="0" iid="15">
     <PROPERTIES/>
    </POPUP>
-   <POPUP w="1384" x="0" flags="00000000" y="480" h="888" pid="0" iid="22">
+   <POPUP w="1384" x="269" flags="00008001" y="418" h="888" pid="0" iid="22">
     <PROPERTIES/>
    </POPUP>
-   <POPUP w="450" x="563" flags="00008023" y="583" h="250" pid="0" iid="12">
+   <POPUP w="450" x="2110" flags="00000023" y="147" h="250" pid="0" iid="12">
     <PROPERTIES>
      <ITEM name="AutoEcho">0</ITEM>
      <ITEM name="HexMode">0</ITEM>
     </PROPERTIES>
    </POPUP>
-   <POPUP w="450" x="461" flags="00000023" y="902" h="250" pid="0" iid="17">
+   <POPUP w="450" x="2110" flags="00000023" y="380" h="250" pid="0" iid="17">
     <PROPERTIES>
      <ITEM name="AutoEcho">0</ITEM>
      <ITEM name="HexMode">0</ITEM>
